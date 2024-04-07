@@ -7,6 +7,7 @@
     <button id="compute-1k-button">1,000x</button>
     <button id="compute-10k-button">10,000x</button>
     <button id="compute-end-button">End</button>
+    <button id="compute-converge-button">Converge</button>
     <style>
         body {
             margin: 0;
@@ -646,20 +647,15 @@ function findMaxFitness(initialGuess, measurements) {
 
     while (stagnantCounter < 1000 && totalCounter < 100000) {
         currentGuess = computeLinesFitness(measurements, currentGuess);
-        console.log("Current Fitness: " + 1/currentGuess.fitness + " Max Fitness: " + 1/bestGuess.fitness);
+        
         if (1/currentGuess.fitness > 1/bestGuess.fitness) {
             bestGuess = {...currentGuess};
             stagnantCounter = 0;
-            console.log("+");
         } else {
             stagnantCounter++;
-            console.log("-");
         }
         totalCounter++;
     }
-
-    console.log("Maxfitness: " + 1/bestGuess.fitness);
-    console.log("Total Counter: " + totalCounter);
 
     return bestGuess;
 }
@@ -725,7 +721,48 @@ compute10kButton.addEventListener('click', () => {
 
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', () => {
-    var result = findMaxFitness(initialGuess, measurements);
+    var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
+    var result = findMaxFitness(guessThisTime, measurements);
+
+    printResults(result);
+});
+
+
+
+
+// var initialGuess = {
+//     tl: {x: 5.08, y: 2790.71},
+//     tr: {x: 3650.47, y: 2811.57},
+//     bl: {x: 0, y: 0},
+//     br: {x: 3655.96, y: 0},
+//     fitness: 0
+// }
+const computeConvergeButton = document.getElementById('compute-converge-button');
+computeConvergeButton.addEventListener('click', () => {
+
+    function computeGuess() {
+        // Clear the canvas
+        clearCanvas();
+
+        var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
+        //Randomize the initial guess +- 200mm
+        guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
+        guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
+        guessThisTime.tr.x = guessThisTime.tr.x + (Math.random() * 400) - 200;
+        guessThisTime.tr.y = guessThisTime.tr.y + (Math.random() * 400) - 200;
+        guessThisTime.bl.x = guessThisTime.bl.x + (Math.random() * 400) - 200;
+        var result = findMaxFitness(guessThisTime, measurements);
+        
+        let output = document.getElementById('output');
+        let guessString = "Fitness: " + 1/result.fitness;
+        output.value += guessString + "\n";
+
+        // Call computeGuess again after a delay
+        setTimeout(computeGuess, 0);
+    }
+
+    // Start the loop
+    computeGuess();
 
     printResults(result);
 });
