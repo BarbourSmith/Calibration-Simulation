@@ -646,6 +646,9 @@ function findMaxFitness(initialGuess, measurements) {
     var bestGuess = {...initialGuess};
 
     while (stagnantCounter < 1000 && totalCounter < 100000) {
+        //Clear the canvass
+        clearCanvas();
+
         currentGuess = computeLinesFitness(measurements, currentGuess);
         
         if (1/currentGuess.fitness > 1/bestGuess.fitness) {
@@ -763,8 +766,6 @@ computeConvergeButton.addEventListener('click', () => {
 
     // Start the loop
     computeGuess();
-
-    printResults(result);
 });
 
 
