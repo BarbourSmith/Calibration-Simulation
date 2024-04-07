@@ -7,6 +7,7 @@
     <button id="compute-1k-button">1,000x</button>
     <button id="compute-10k-button">10,000x</button>
     <button id="compute-end-button">End</button>
+    <button id="compute-converge-button">Converge</button>
     <style>
         body {
             margin: 0;
@@ -18,9 +19,14 @@
 
 <---click this button to see the simulation find the corners
 
-<div id = "views">
+<div id = "views"></div>
+<div>
+    <textarea id="output" style="width: 1000px;" rows="16"></textarea>
+</div>
 
 </div>
+
+
 
 <script>
 
@@ -114,6 +120,7 @@ function computeEndpointFitness(line1, line2, line3, line4){
     const f = distanceBetweenPoints(line3.xEnd, line3.yEnd, line4.xEnd, line4.yEnd);
 
     const fitness = (a+b+c+d+e+f)/6;
+    
 
     return fitness;
 }
@@ -358,8 +365,6 @@ function computeLinesFitness(measurements, lastGuess){
     //Computes the average fitness of all of the measurements
     const fitness = calculateAverage(fitnesses);
 
-    console.log(fitnesses);
-
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
     lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
     lastGuess.fitness = fitness;
@@ -526,7 +531,11 @@ function printResults(guess){
     // console.log("trY error: " + (guess.tr.y - trueTRY) + "mm at: " + guess.tr.y);
     // console.log("brX error: " + (guess.br.x - trueBRX) + "mm at: " + guess.br.x);
 
-    console.log("(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")"); 
+    let output = document.getElementById('output');
+    let guessString = "Fitness: " + 1/guess.fitness + "(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")";
+    output.value += guessString + "\n";
+
+    console.log(guessString); 
 
 }
 
@@ -630,41 +639,28 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
     return newMeasurements;
 }
 
-
 function findMaxFitness(initialGuess, measurements) {
-    var maxFitness = -1;
-    var newFitness = 0;
-    var stagnantCounter = 0;
+    let currentGuess = initialGuess;
+    let stagnantCounter = 0;
+    let totalCounter = 0;
+    var bestGuess = {...initialGuess};
 
-    while (stagnantCounter < 14) {
-        maxFitness = newFitness;
+    while (stagnantCounter < 1000 && totalCounter < 100000) {
+        //Clear the canvass
+        clearCanvas();
 
-        var maxFitnessThisRun = 0;
-        //Run 1,000 steps
-        for (let i = 0; i < 100; i++) {
-            clearCanvas();
-            initialGuess = computeLinesFitness(measurements, initialGuess);
-            maxFitnessThisRun = Math.max(1 / initialGuess.fitness, maxFitnessThisRun);
-        }
-
-        newFitness = maxFitnessThisRun;
-        console.log("Fitness: " + newFitness);
-
-        if (stagnantCounter > 1) {
-            console.log("Stagnant Counter: " + stagnantCounter);
-        }
-
-        if (newFitness <= maxFitness) {
-            stagnantCounter++;
-        } else {
+        currentGuess = computeLinesFitness(measurements, currentGuess);
+        
+        if (1/currentGuess.fitness > 1/bestGuess.fitness) {
+            bestGuess = JSON.parse(JSON.stringify(currentGuess));
             stagnantCounter = 0;
+        } else {
+            stagnantCounter++;
         }
+        totalCounter++;
     }
 
-    console.log("Maxfitness: " + maxFitness);
-    console.log("NewFitness: " + newFitness);
-
-    return initialGuess;
+    return bestGuess;
 }
 
 
@@ -678,6 +674,8 @@ canvas.height = 600;
 canvas.style.border   = "1px solid";
 document.getElementById("views").appendChild(canvas);
 
+
+
 //Deletes everything from the canvas
 function clearCanvas() {
     const canvas = document.getElementById('CursorLayer');
@@ -685,11 +683,12 @@ function clearCanvas() {
     context.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-// Attach an event listener to the button
+// Computes the fitness of the next single step
 const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
     clearCanvas();
     initialGuess = computeLinesFitness(measurements, initialGuess);
+    console.log("Fitness: " + 1/initialGuess.fitness);
     printResults(initialGuess);
 });
 
@@ -707,21 +706,66 @@ compute1kButton.addEventListener('click', () => {
 
 const compute10kButton = document.getElementById('compute-10k-button');
 compute10kButton.addEventListener('click', () => {
-    for(let i = 0; i < 10000; i++){
+    let i = 0;
+    function loop() {
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
         console.log("Fitness: " + 1/initialGuess.fitness);
+        i++;
+        if (i < 10000) {
+            requestAnimationFrame(loop);
+        } else {
+            printResults(initialGuess);
+        }
     }
-    printResults(initialGuess);
+    loop();
 });
 
 
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', () => {
-
-    var result = findMaxFitness(initialGuess, measurements);
+    var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
+    var result = findMaxFitness(guessThisTime, measurements);
 
     printResults(result);
+});
+
+
+
+
+// var initialGuess = {
+//     tl: {x: 5.08, y: 2790.71},
+//     tr: {x: 3650.47, y: 2811.57},
+//     bl: {x: 0, y: 0},
+//     br: {x: 3655.96, y: 0},
+//     fitness: 0
+// }
+const computeConvergeButton = document.getElementById('compute-converge-button');
+computeConvergeButton.addEventListener('click', () => {
+
+    function computeGuess() {
+        // Clear the canvas
+        clearCanvas();
+
+        var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
+        //Randomize the initial guess +- 200mm
+        guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
+        guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
+        guessThisTime.tr.x = guessThisTime.tr.x + (Math.random() * 400) - 200;
+        guessThisTime.tr.y = guessThisTime.tr.y + (Math.random() * 400) - 200;
+        guessThisTime.bl.x = guessThisTime.bl.x + (Math.random() * 400) - 200;
+        var result = findMaxFitness(guessThisTime, measurements);
+        
+        let output = document.getElementById('output');
+        let guessString = "Fitness: " + 1/result.fitness + " tlX: " + result.tl.x;
+        output.value += guessString + "\n";
+
+        // Call computeGuess again after a delay
+        setTimeout(computeGuess, 0);
+    }
+
+    // Start the loop
+    computeGuess();
 });
 
 
@@ -738,14 +782,18 @@ computeEndButton.addEventListener('click', () => {
 
 //Establish initial guesses for the corners
 var initialGuess = {
-    tl: {x: 0, y: initialHeight},
-    tr: {x: initialWidth, y: initialHeight},
+    tl: {x: 5.08, y: 2790.71},
+    tr: {x: 3650.47, y: 2811.57},
     bl: {x: 0, y: 0},
-    br: {x: initialWidth, y: 0},
+    br: {x: 3655.96, y: 0},
     fitness: 0
 }
 
 
+window.onload = function() {
+    let output = document.getElementById('output');
+    output.value = "";
+}
 
 const centerX = initialWidth/2;
 const centerY = initialHeight/2;
@@ -770,110 +818,105 @@ calculateTensions(centerX, centerY, initialGuess);
 
 
 
-var measurements = [
-
-{bl:1556.708,   br:2742.745,   tr:2443.385,   tl:875.906},
-{bl:1465.929,   br:2693.506,   tr:2471.514,   tl:949.891},
-{bl:1377.142,   br:2644.507,   tr:2502.850,   tl:1029.003},
-{bl:1289.476,   br:2599.950,   tr:2537.839,   tl:1111.201},
-{bl:1204.449,   br:2558.028,   tr:2576.225,   tl:1196.271},
-{bl:1120.149,   br:2520.468,   tr:2617.833,   tl:1283.405},
-{bl:1039.291,   br:2484.735,   tr:2662.600,   tl:1372.415},
-{bl:961.180,   br:2453.920,   tr:2710.271,   tl:1462.706},
-{bl:889.125,   br:2424.455,   tr:2760.749,   tl:1554.311},
-{bl:1018.388,   br:2258.695,   tr:2613.533,   tl:1628.519},
-{bl:1082.750,   br:2287.927,   tr:2559.974,   tl:1541.997},
-{bl:1151.453,   br:2321.566,   tr:2509.399,   tl:1456.503},
-{bl:1225.916,   br:2359.883,   tr:2461.811,   tl:1372.912},
-{bl:1303.103,   br:2401.069,   tr:2417.458,   tl:1291.683},
-{bl:1382.676,   br:2444.215,   tr:2376.473,   tl:1213.387},
-{bl:1465.349,   br:2492.165,   tr:2339.079,   tl:1138.331},
-{bl:1548.331,   br:2542.681,   tr:2305.386,   tl:1067.430},
-{bl:1634.797,   br:2596.095,   tr:2275.655,   tl:1001.508},
-{bl:1725.235,   br:2453.144,   tr:2108.699,   tl:1139.499},
-{bl:1645.377,   br:2396.925,   tr:2140.139,   tl:1197.924},
-{bl:1565.936,   br:2344.117,   tr:2176.304,   tl:1261.428},
-{bl:1489.702,   br:2293.437,   tr:2216.419,   tl:1329.522},
-{bl:1416.087,   br:2245.780,   tr:2260.305,   tl:1401.271},
-{bl:1346.131,   br:2202.392,   tr:2307.606,   tl:1476.362},
-{bl:1279.937,   br:2161.469,   tr:2358.186,   tl:1554.335},
-{bl:1216.605,   br:2124.983,   tr:2411.926,   tl:1634.660},
-{bl:1158.968,   br:2094.065,   tr:2468.577,   tl:1717.089},
-{bl:1307.905,   br:1928.595,   tr:2329.035,   tl:1818.489},
-{bl:1359.626,   br:1962.374,   tr:2268.846,   tl:1741.535},
-{bl:1415.550,   br:2002.723,   tr:2211.647,   tl:1666.297},
-{bl:1476.059,   br:2045.468,   tr:2157.545,   tl:1593.766},
-{bl:1541.425,   br:2092.141,   tr:2106.731,   tl:1524.350},
-{bl:1609.347,   br:2143.481,   tr:2059.656,   tl:1458.500},
-{bl:1680.235,   br:2197.134,   tr:2016.403,   tl:1396.757},
-{bl:1754.998,   br:2256.000,   tr:1977.192,   tl:1339.544},
-{bl:1831.249,   br:2314.885,   tr:1942.440,   tl:1287.614},
-{bl:1943.688,   br:2178.993,   tr:1778.572,   tl:1440.820},
-{bl:1871.928,   br:2116.225,   tr:1815.850,   tl:1487.584},
-{bl:1803.117,   br:2056.049,   tr:1858.349,   tl:1539.160},
-{bl:1737.316,   br:1999.301,   tr:1905.175,   tl:1595.253},
-{bl:1674.722,   br:1942.995,   tr:1955.956,   tl:1655.625},
-{bl:1615.885,   br:1892.420,   tr:2010.506,   tl:1719.698},
-{bl:1560.071,   br:1845.275,   tr:2068.363,   tl:1787.078},
-{bl:1508.345,   br:1804.540,   tr:2129.481,   tl:1857.361},
-{bl:1463.390,   br:1764.943,   tr:2193.192,   tl:1930.310},
-{bl:1624.662,   br:1601.824,   tr:2064.809,   tl:2051.038},
-{bl:1663.691,   br:1643.958,   tr:1996.743,   tl:1983.210},
-{bl:1710.065,   br:1689.833,   tr:1931.424,   tl:1917.478},
-{bl:1761.537,   br:1741.624,   tr:1869.319,   tl:1854.852},
-{bl:1815.362,   br:1797.978,   tr:1810.523,   tl:1795.484},
-{bl:1873.675,   br:1858.078,   tr:1755.438,   tl:1739.941},
-{bl:1934.664,   br:1920.363,   tr:1704.464,   tl:1688.477},
-{bl:2000.959,   br:1986.262,   tr:1657.920,   tl:1641.518},
-{bl:2066.777,   br:2052.119,   tr:1616.291,   tl:1599.454},
-{bl:2194.539,   br:1930.257,   tr:1457.708,   tl:1760.227},
-{bl:2131.859,   br:1859.283,   tr:1503.132,   tl:1798.681},
-{bl:2072.698,   br:1790.025,   tr:1554.083,   tl:1841.587},
-{bl:2014.876,   br:1722.519,   tr:1609.793,   tl:1888.834},
-{bl:1960.704,   br:1658.798,   tr:1669.595,   tl:1940.045},
-{bl:1911.238,   br:1598.005,   tr:1733.107,   tl:1994.990},
-{bl:1865.153,   br:1542.287,   tr:1799.832,   tl:2053.349},
-{bl:1822.872,   br:1490.523,   tr:1869.778,   tl:2114.823},
-{bl:1785.105,   br:1443.518,   tr:1942.193,   tl:2179.157},
-{bl:1949.413,   br:1289.831,   tr:1829.507,   tl:2313.358},
-{bl:1982.641,   br:1342.405,   tr:1752.448,   tl:2253.534},
-{bl:2021.986,   br:1399.250,   tr:1677.774,   tl:2195.881},
-{bl:2064.530,   br:1461.667,   tr:1605.729,   tl:2141.366},
-{bl:2111.350,   br:1527.232,   tr:1536.914,   tl:2090.216},
-{bl:2161.423,   br:1596.096,   tr:1471.614,   tl:2042.688},
-{bl:2215.909,   br:1669.609,   tr:1410.284,   tl:1999.013},
-{bl:2271.573,   br:1744.337,   tr:1353.839,   tl:1959.497},
-{bl:2331.641,   br:1818.894,   tr:1302.542,   tl:1924.414},
-{bl:2471.294,   br:1719.156,   tr:1153.458,   tl:2089.274},
-{bl:2414.768,   br:1635.997,   tr:1210.816,   tl:2121.947},
-{bl:2361.625,   br:1555.906,   tr:1273.498,   tl:2158.444},
-{bl:2311.949,   br:1478.364,   tr:1340.824,   tl:2198.922},
-{bl:2265.534,   br:1403.112,   tr:1412.026,   tl:2243.101},
-{bl:2220.826,   br:1332.469,   tr:1486.701,   tl:2290.783},
-{bl:2181.814,   br:1264.891,   tr:1564.100,   tl:2341.782},
-{bl:2144.984,   br:1201.057,   tr:1643.952,   tl:2395.865},
-{bl:2113.605,   br:1142.443,   tr:1725.914,   tl:2452.838},
-{bl:2280.033,   br:1001.424,   tr:1635.949,   tl:2596.433},
-{bl:2307.810,   br:1068.850,   tr:1549.370,   tl:2543.352},
-{bl:2341.078,   br:1139.088,   tr:1464.319,   tl:2492.414},
-{bl:2379.283,   br:1213.843,   tr:1381.187,   tl:2444.515},
-{bl:2419.216,   br:1292.995,   tr:1300.497,   tl:2399.832},
-{bl:2463.534,   br:1374.120,   tr:1222.682,   tl:2358.541},
-{bl:2512.107,   br:1457.303,   tr:1148.165,   tl:2320.827},
-{bl:2561.885,   br:1543.438,   tr:1077.906,   tl:2286.896},
-{bl:2615.112,   br:1628.903,   tr:1012.644,   tl:2256.846},
-{bl:2761.887,   br:1551.896,   tr:884.291,   tl:2424.345},
-{bl:2710.875,   br:1462.496,   tr:957.801,   tl:2452.621},
-{bl:2664.538,   br:1371.967,   tr:1035.898,   tl:2484.276},
-{bl:2619.119,   br:1284.052,   tr:1117.855,   tl:2519.488},
-{bl:2577.731,   br:1196.360,   tr:1202.487,   tl:2558.165},
-{bl:2540.461,   br:1110.860,   tr:1289.170,   tl:2600.062},
-{bl:2504.334,   br:1028.530,   tr:1377.775,   tl:2645.122},
-{bl:2474.673,   br:949.059,   tr:1467.808,   tl:2693.125},
-{bl:2446.134,   br:875.992,   tr:1559.043,   tl:2743.918},
-
-];
-
+var measurements = [{bl:1515.103,   br:2804.748,   tr:2447.121,   tl:876.392},
+{bl:1422.588,   br:2756.036,   tr:2475.148,   tl:950.036},
+{bl:1330.711,   br:2709.874,   tr:2506.532,   tl:1028.783},
+{bl:1242.074,   br:2666.919,   tr:2541.451,   tl:1110.755},
+{bl:1152.336,   br:2625.891,   tr:2579.771,   tl:1195.702},
+{bl:1066.214,   br:2588.245,   tr:2621.357,   tl:1282.753},
+{bl:980.827,   br:2554.013,   tr:2666.022,   tl:1371.564},
+{bl:898.978,   br:2524.223,   tr:2713.698,   tl:1461.807},
+{bl:821.227,   br:2497.490,   tr:2764.155,   tl:1553.227},
+{bl:944.488,   br:2329.336,   tr:2616.864,   tl:1627.878},
+{bl:1012.958,   br:2358.208,   tr:2563.315,   tl:1541.466},
+{bl:1085.974,   br:2391.109,   tr:2512.789,   tl:1456.095},
+{bl:1163.225,   br:2426.964,   tr:2465.281,   tl:1372.721},
+{bl:1243.953,   br:2467.498,   tr:2420.992,   tl:1291.723},
+{bl:1327.933,   br:2510.706,   tr:2380.056,   tl:1213.508},
+{bl:1411.503,   br:2556.705,   tr:2342.673,   tl:1138.744},
+{bl:1497.150,   br:2604.523,   tr:2309.074,   tl:1068.168},
+{bl:1585.489,   br:2656.684,   tr:2279.324,   tl:1002.466},
+{bl:1667.671,   br:2511.146,   tr:2112.284,   tl:1141.007},
+{bl:1584.689,   br:2456.440,   tr:2143.682,   tl:1199.078},
+{bl:1502.899,   br:2404.733,   tr:2179.849,   tl:1262.327},
+{bl:1424.807,   br:2354.971,   tr:2219.914,   tl:1330.091},
+{bl:1348.434,   br:2311.382,   tr:2263.679,   tl:1401.604},
+{bl:1274.167,   br:2269.034,   tr:2310.974,   tl:1476.625},
+{bl:1205.273,   br:2230.083,   tr:2361.523,   tl:1554.373},
+{bl:1138.548,   br:2194.955,   tr:2415.171,   tl:1634.507},
+{bl:1079.124,   br:2163.861,   tr:2471.699,   tl:1716.818},
+{bl:1224.834,   br:1998.560,   tr:2332.173,   tl:1818.502},
+{bl:1277.310,   br:2030.427,   tr:2272.002,   tl:1741.745},
+{bl:1337.668,   br:2069.144,   tr:2214.870,   tl:1666.638},
+{bl:1400.651,   br:2111.442,   tr:2160.817,   tl:1594.290},
+{bl:1469.800,   br:2156.544,   tr:2110.105,   tl:1525.117},
+{bl:1540.848,   br:2205.785,   tr:2063.022,   tl:1459.522},
+{bl:1613.832,   br:2256.357,   tr:2019.828,   tl:1397.913},
+{bl:1689.476,   br:2311.992,   tr:1980.706,   tl:1341.026},
+{bl:1767.205,   br:2369.918,   tr:1946.009,   tl:1289.412},
+{bl:1874.848,   br:2232.223,   tr:1782.040,   tl:1442.737},
+{bl:1800.506,   br:2169.567,   tr:1819.334,   tl:1489.251},
+{bl:1729.763,   br:2111.992,   tr:1861.715,   tl:1540.601},
+{bl:1663.028,   br:2057.909,   tr:1908.385,   tl:1596.547},
+{bl:1596.614,   br:2005.305,   tr:1959.225,   tl:1656.760},
+{bl:1535.011,   br:1956.136,   tr:2013.652,   tl:1720.557},
+{bl:1477.750,   br:1912.553,   tr:2071.423,   tl:1787.679},
+{bl:1424.756,   br:1871.767,   tr:2132.372,   tl:1857.828},
+{bl:1377.448,   br:1834.585,   tr:2196.184,   tl:1930.625},
+{bl:1535.784,   br:1671.982,   tr:2067.609,   tl:2051.593},
+{bl:1579.858,   br:1711.243,   tr:1999.647,   tl:1983.935},
+{bl:1626.737,   br:1754.349,   tr:1934.441,   tl:1918.369},
+{bl:1679.242,   br:1805.071,   tr:1872.314,   tl:1855.840},
+{bl:1735.475,   br:1857.018,   tr:1813.671,   tl:1796.772},
+{bl:1795.798,   br:1914.472,   tr:1758.675,   tl:1741.457},
+{bl:1858.199,   br:1972.911,   tr:1707.722,   tl:1690.241},
+{bl:1923.732,   br:2034.606,   tr:1661.377,   tl:1643.515},
+{bl:1990.999,   br:2099.288,   tr:1619.839,   tl:1601.684},
+{bl:2118.648,   br:1975.276,   tr:1461.009,   tl:1762.422},
+{bl:2054.838,   br:1906.267,   tr:1506.227,   tl:1800.766},
+{bl:1992.405,   br:1839.545,   tr:1557.307,   tl:1843.472},
+{bl:1935.405,   br:1776.350,   tr:1612.866,   tl:1890.445},
+{bl:1879.400,   br:1715.296,   tr:1672.559,   tl:1941.557},
+{bl:1827.359,   br:1657.826,   tr:1735.990,   tl:1996.276},
+{bl:1780.064,   br:1603.743,   tr:1802.717,   tl:2054.471},
+{bl:1735.708,   br:1556.257,   tr:1872.413,   tl:2115.800},
+{bl:1696.967,   br:1511.372,   tr:1944.812,   tl:2179.989},
+{bl:1859.721,   br:1355.756,   tr:1831.984,   tl:2314.380},
+{bl:1894.787,   br:1404.484,   tr:1754.977,   tl:2254.677},
+{bl:1935.021,   br:1458.223,   tr:1680.348,   tl:2197.196},
+{bl:1978.722,   br:1516.236,   tr:1608.515,   tl:2142.826},
+{bl:2027.842,   br:1579.506,   tr:1539.710,   tl:2091.848},
+{bl:2079.692,   br:1645.947,   tr:1474.593,   tl:2044.457},
+{bl:2134.315,   br:1714.577,   tr:1413.529,   tl:2000.983},
+{bl:2192.851,   br:1785.312,   tr:1356.977,   tl:1961.695},
+{bl:2253.459,   br:1859.439,   tr:1305.766,   tl:1926.733},
+{bl:2390.540,   br:1752.253,   tr:1156.735,   tl:2091.746},
+{bl:2333.405,   br:1672.674,   tr:1213.594,   tl:2124.234},
+{bl:2278.664,   br:1596.319,   tr:1276.381,   tl:2160.532},
+{bl:2227.080,   br:1522.269,   tr:1343.589,   tl:2200.825},
+{bl:2180.013,   br:1451.095,   tr:1414.659,   tl:2244.878},
+{bl:2134.581,   br:1383.361,   tr:1489.202,   tl:2292.417},
+{bl:2093.555,   br:1318.262,   tr:1566.513,   tl:2343.277},
+{bl:2056.586,   br:1257.757,   tr:1646.180,   tl:2397.209},
+{bl:2023.411,   br:1204.119,   tr:1728.091,   tl:2454.052},
+{bl:2189.214,   br:1060.403,   tr:1637.787,   tl:2597.797},
+{bl:2218.668,   br:1122.683,   tr:1551.292,   tl:2544.825},
+{bl:2253.013,   br:1189.148,   tr:1466.310,   tl:2494.027},
+{bl:2291.470,   br:1260.379,   tr:1383.377,   tl:2446.263},
+{bl:2334.725,   br:1335.048,   tr:1302.730,   tl:2401.745},
+{bl:2380.096,   br:1412.990,   tr:1225.046,   tl:2360.599},
+{bl:2428.669,   br:1493.835,   tr:1150.780,   tl:2323.007},
+{bl:2481.321,   br:1575.936,   tr:1080.668,   tl:2289.228},
+{bl:2535.147,   br:1657.885,   tr:1015.540,   tl:2259.358},
+{bl:2679.652,   br:1576.720,   tr:886.828,   tl:2426.905},
+{bl:2628.118,   br:1487.015,   tr:960.040,   tl:2455.066},
+{bl:2580.080,   br:1399.739,   tr:1038.177,   tl:2486.542},
+{bl:2533.990,   br:1313.286,   tr:1119.862,   tl:2521.646},
+{bl:2490.742,   br:1231.689,   tr:1204.318,   tl:2560.170},
+{bl:2451.255,   br:1149.625,   tr:1290.990,   tl:2601.989},
+{bl:2415.340,   br:1071.757,   tr:1379.455,   tl:2646.861},
+{bl:2383.880,   br:996.215,   tr:1469.311,   tl:2694.749},
+{bl:2355.298,   br:926.285,   tr:1560.509,   tl:2745.407},]
 //Do projection and scaling
 // measurements = scaleMeasurements(measurements, 0.9945);
 measurements = projectMeasurements(measurements);
