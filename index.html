@@ -114,6 +114,7 @@ function computeEndpointFitness(line1, line2, line3, line4){
     const f = distanceBetweenPoints(line3.xEnd, line3.yEnd, line4.xEnd, line4.yEnd);
 
     const fitness = (a+b+c+d+e+f)/6;
+    
 
     return fitness;
 }
@@ -357,8 +358,6 @@ function computeLinesFitness(measurements, lastGuess){
     
     //Computes the average fitness of all of the measurements
     const fitness = calculateAverage(fitnesses);
-
-    console.log(fitnesses);
 
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
     lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
@@ -630,21 +629,22 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
     return newMeasurements;
 }
 
-
+var bestGuess = null;
 function findMaxFitness(initialGuess, measurements) {
     var maxFitness = -1;
     var newFitness = 0;
     var stagnantCounter = 0;
+    var totalCounter = 0;
 
-    while (stagnantCounter < 14) {
-        maxFitness = newFitness;
+    while (stagnantCounter < 14 && totalCounter < 100000) {
 
         var maxFitnessThisRun = 0;
-        //Run 1,000 steps
+        //Run 100 steps
         for (let i = 0; i < 100; i++) {
             clearCanvas();
             initialGuess = computeLinesFitness(measurements, initialGuess);
             maxFitnessThisRun = Math.max(1 / initialGuess.fitness, maxFitnessThisRun);
+            totalCounter++;
         }
 
         newFitness = maxFitnessThisRun;
@@ -658,11 +658,13 @@ function findMaxFitness(initialGuess, measurements) {
             stagnantCounter++;
         } else {
             stagnantCounter = 0;
+            maxFitness = newFitness;
+            bestGuess = initialGuess;
         }
     }
 
     console.log("Maxfitness: " + maxFitness);
-    console.log("NewFitness: " + newFitness);
+    console.log("Total Counter: " + totalCounter);
 
     return initialGuess;
 }
@@ -690,7 +692,8 @@ const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
     clearCanvas();
     initialGuess = computeLinesFitness(measurements, initialGuess);
-    printResults(initialGuess);
+    console.log("Fitness: " + 1/bestGuess.fitness);
+    printResults(bestGuess);
 });
 
 
@@ -700,9 +703,9 @@ compute1kButton.addEventListener('click', () => {
     for(let i = 0; i < 1000; i++){
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
+        console.log("Fitness: " + 1/bestGuess.fitness);
     }
-    printResults(initialGuess);
+    printResults(bestGuess);
 });
 
 const compute10kButton = document.getElementById('compute-10k-button');
@@ -716,7 +719,7 @@ compute10kButton.addEventListener('click', () => {
         if (i < 10000) {
             requestAnimationFrame(loop);
         } else {
-            printResults(initialGuess);
+            printResults(bestGuess);
         }
     }
     loop();
@@ -725,10 +728,9 @@ compute10kButton.addEventListener('click', () => {
 
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', () => {
-
     var result = findMaxFitness(initialGuess, measurements);
 
-    printResults(result);
+    printResults(bestGuess);
 });
 
 
@@ -745,10 +747,10 @@ computeEndButton.addEventListener('click', () => {
 
 //Establish initial guesses for the corners
 var initialGuess = {
-    tl: {x: 0, y: initialHeight},
-    tr: {x: initialWidth, y: initialHeight},
+    tl: {x: 5.08, y: 2790.71},
+    tr: {x: 3650.47, y: 2811.57},
     bl: {x: 0, y: 0},
-    br: {x: initialWidth, y: 0},
+    br: {x: 3655.96, y: 0},
     fitness: 0
 }
 
