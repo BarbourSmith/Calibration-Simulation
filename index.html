@@ -643,7 +643,7 @@ function findMaxFitness(initialGuess, measurements) {
     let currentGuess = initialGuess;
     let stagnantCounter = 0;
     let totalCounter = 0;
-    var bestGuess = {...initialGuess};
+    var bestGuess = JSON.parse(JSON.stringify(initialGuess));
 
     while (stagnantCounter < 1000 && totalCounter < 100000) {
         //Clear the canvass
