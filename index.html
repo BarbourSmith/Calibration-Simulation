@@ -294,6 +294,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
     var trY = 0;
     var brX = 0;
 
+    //In total how far is each corner from the center of mass of each measurement
     lines.forEach(line => {
         const tweaks = generateTweaks(line);
         
@@ -305,12 +306,14 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
 
     })
 
+    //Divide by the number of measurements to get the average
     tlX = tlX/lines.length;
     tlY = tlY/lines.length;
     trX = trX/lines.length;
     trY = trY/lines.length;
     brX = brX/lines.length;
 
+    //Find which corner is the furthest off and is it in X or Y
     const maxError = Math.max(
         Math.abs(tlX),
         Math.abs(tlY),
@@ -320,26 +323,27 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
     );
 
 
-    var divisor = -10;
+    //Move the corner that is the furthest off in the direction needed
+    var scalor = -1;
     if(maxError == Math.abs(tlX)){
         //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.x = lastGuess.tl.x + tlX/divisor;
+        lastGuess.tl.x = lastGuess.tl.x + tlX*scalor;
     }
     if(maxError == Math.abs(tlY)){
         //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.y = lastGuess.tl.y + tlY/divisor;
+        lastGuess.tl.y = lastGuess.tl.y + tlY*scalor;
     }
     else if(maxError == Math.abs(trX)){
         //console.log("Move trX by: " + trX/divisor);
-        lastGuess.tr.x = lastGuess.tr.x + trX/divisor;
+        lastGuess.tr.x = lastGuess.tr.x + trX*scalor;
     }
     else if(maxError == Math.abs(trY)){
         //console.log("Move trY by: " + trY/divisor);
-        lastGuess.tr.y = lastGuess.tr.y + trY/divisor;
+        lastGuess.tr.y = lastGuess.tr.y + trY*scalor;
     }
     else if(maxError == Math.abs(brX)){
         //console.log("Move brX by: " + brX/divisor);
-        lastGuess.br.x = lastGuess.br.x + brX/divisor;
+        lastGuess.br.x = lastGuess.br.x + brX*scalor;
     }
     
     return lastGuess;
@@ -835,10 +839,10 @@ computeConvergeButton.addEventListener('click', () => {
 
 //Establish initial guesses for the corners
 var initialGuess = {
-    tl: {x: -18.9, y: 2442.8},
-    tr: {x: 3662.2, y: 2471.2},
+    tl: {x: 0, y: 2500},
+    tr: {x: 3600, y: 2500},
     bl: {x: 0, y: 0},
-    br: {x: 3656.7, y: 0},
+    br: {x: 3600, y: 0},
     fitness: 0
 }
 
@@ -871,7 +875,7 @@ calculateTensions(centerX, centerY, initialGuess);
 
 
 
-var measurements = [{bl:2220.79, br:2215.53, tr:2200.01, tl:2202.68},{bl:2005.23, br:2007.33, tr:2467.03, tl:2459.84},{bl:1240.99, br:2857.85, tr:3193.87, tl:1872.11},{bl:1334.59, br:2871.71, tr:3124.59, tl:1786.39},{bl:1407.65, br:2905.60, tr:3077.22, tl:1702.18},{bl:1484.94, br:2943.69, tr:3032.42, tl:1619.77},{bl:1564.23, br:2984.37, tr:2990.27, tl:1539.52},{bl:1646.20, br:3028.56, tr:2950.92, tl:1461.55},{bl:1732.08, br:3076.06, tr:2914.47, tl:1386.47},{bl:1820.74, br:3125.76, tr:2881.03, tl:1314.69},{bl:1907.71, br:3178.78, tr:2850.70, tl:1246.98},{bl:2018.12, br:2983.91, tr:2636.26, tl:1438.94},{bl:1909.02, br:2930.87, tr:2693.26, tl:1498.10},{bl:1830.44, br:2880.32, tr:2729.78, tl:1561.25},{bl:1754.08, br:2832.40, tr:2768.08, tl:1628.91},{bl:1680.19, br:2787.23, tr:2809.93, tl:1697.76},{bl:1609.15, br:2744.97, tr:2855.70, tl:1771.69},{bl:1541.31, br:2705.75, tr:2903.41, tl:1846.49},{bl:1477.15, br:2669.70, tr:2952.31, tl:1926.99},{bl:1417.13, br:2636.94, tr:3003.42, tl:2003.41},{bl:1626.66, br:2424.42, tr:2797.05, tl:2129.45},{bl:1680.54, br:2460.45, tr:2740.40, tl:2056.56},{bl:1740.25, br:2500.65, tr:2686.28, tl:1983.88},{bl:1802.81, br:2544.76, tr:2634.84, tl:1913.63},{bl:1870.01, br:2592.56, tr:2586.21, tl:1846.14},{bl:1940.61, br:2643.82, tr:2540.62, tl:1781.72},{bl:2015.65, br:2698.24, tr:2498.15, tl:1720.66},{bl:2092.01, br:2755.10, tr:2459.07, tl:1663.43},{bl:2171.82, br:2816.22, tr:2423.47, tl:1610.33},{bl:2305.47, br:2617.78, tr:2213.23, tl:1831.74},{bl:2210.24, br:2557.16, tr:2277.77, tl:1870.71},{bl:2142.73, br:2499.06, tr:2319.87, tl:1921.86},{bl:2077.87, br:2443.67, tr:2365.32, tl:1978.01},{bl:2015.92, br:2391.19, tr:2413.70, tl:2035.46},{bl:1957.09, br:2341.78, tr:2464.84, tl:2096.55},{bl:1901.80, br:2295.69, tr:2518.51, tl:2161.08},{bl:1850.11, br:2253.09, tr:2576.65, tl:2227.31},{bl:1802.51, br:2214.21, tr:2638.58, tl:2297.30},{bl:2025.17, br:2007.32, tr:2444.39, tl:2452.65},{bl:2068.27, br:2057.89, tr:2379.34, tl:2381.79},{bl:2116.08, br:2107.16, tr:2316.80, tl:2319.34},{bl:2166.82, br:2160.08, tr:2256.93, tl:2259.52},{bl:2221.71, br:2216.85, tr:2200.00, tl:2202.65},{bl:2280.01, br:2276.86, tr:2146.27, tl:2148.91},{bl:2343.74, br:2340.05, tr:2095.90, tl:2098.55},{bl:2410.68, br:2406.31, tr:2049.21, tl:2051.85},{bl:2479.85, br:2475.25, tr:2006.33, tl:2009.15},{bl:2637.61, br:2281.89, tr:1803.64, tl:2244.09},{bl:2555.60, br:2212.05, tr:1874.31, tl:2271.92},{bl:2497.55, br:2144.62, tr:1924.84, tl:2314.58},{bl:2442.03, br:2079.82, tr:1981.62, tl:2360.23},{bl:2389.52, br:2017.88, tr:2039.13, tl:2408.58},{bl:2340.09, br:1959.11, tr:2100.35, tl:2460.50},{bl:2293.99, br:1903.79, tr:2164.87, tl:2515.10},{bl:2251.42, br:1852.23, tr:2232.01, tl:2572.68},{bl:2212.59, br:1804.68, tr:2298.77, tl:2633.46},{bl:2436.02, br:1608.03, tr:2128.87, tl:2812.23},{bl:2466.33, br:1677.13, tr:2053.78, tl:2742.44},{bl:2506.24, br:1736.45, tr:1980.99, tl:2688.35},{bl:2550.84, br:1799.99, tr:1910.65, tl:2636.93},{bl:2597.72, br:1866.62, tr:1843.08, tl:2588.42},{bl:2648.23, br:1937.34, tr:1778.51, tl:2542.80},{bl:2702.15, br:2009.88, tr:1717.48, tl:2500.49},{bl:2760.24, br:2088.43, tr:1660.04, tl:2461.37},{bl:2821.46, br:2167.06, tr:1606.84, tl:2425.83},{bl:3000.24, br:1991.51, tr:1418.45, tl:2668.46},{bl:2929.50, br:1911.08, tr:1501.30, tl:2687.47},{bl:2878.93, br:1832.61, tr:1563.48, tl:2724.53},{bl:2830.98, br:1756.37, tr:1629.67, tl:2762.24},{bl:2785.79, br:1682.54, tr:1701.56, tl:2803.86},{bl:2743.52, br:1611.64, tr:1773.68, tl:2848.13},{bl:2704.26, br:1543.90, tr:1851.38, tl:2896.71},{bl:2668.24, br:1479.76, tr:1927.38, tl:2947.72},{bl:2635.41, br:1419.93, tr:2007.17, tl:2998.79},{bl:2861.94, br:1244.03, tr:1869.07, tl:3191.26},{bl:2878.73, br:1331.77, tr:1783.14, tl:3126.41},{bl:2912.90, br:1404.83, tr:1698.86, tl:3079.06},{bl:2951.41, br:1482.03, tr:1616.20, tl:3034.28},{bl:2993.06, br:1561.41, tr:1535.71, tl:2992.16},{bl:3037.71, br:1644.27, tr:1457.71, tl:2952.84},{bl:3084.43, br:1731.09, tr:1382.32, tl:2916.41},{bl:3133.55, br:1819.11, tr:1310.40, tl:2882.99},{bl:3185.67, br:1908.47, tr:1242.30, tl:2852.69},]
+var measurements = [{bl:2220.79, br:2215.53, tr:2200.01, tl:2202.68},{bl:2005.23, br:2007.33, tr:2467.03, tl:2459.84},{bl:1240.99, br:2857.85, tr:3193.87, tl:1872.11},{bl:1334.59, br:2871.71, tr:3124.59, tl:1786.39},{bl:1407.65, br:2905.60, tr:3077.22, tl:1702.18},{bl:1484.94, br:2943.69, tr:3032.42, tl:1619.77},{bl:1564.23, br:2984.37, tr:2990.27, tl:1539.52},]
 //Do projection and scaling
 // measurements = scaleMeasurements(measurements, 0.9945);
 measurements = projectMeasurements(measurements);
