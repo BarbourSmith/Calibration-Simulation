@@ -276,8 +276,9 @@ function generateTweaks(lines){
     const trX = computeDistanceFromCenterOfMass(lines.trLine, lines.tlLine, lines.blLine, lines.brLine).x;
     const trY = computeDistanceFromCenterOfMass(lines.trLine, lines.tlLine, lines.blLine, lines.brLine).y;
     const brX = computeDistanceFromCenterOfMass(lines.brLine, lines.tlLine, lines.trLine, lines.blLine).x;
+    const brY = computeDistanceFromCenterOfMass(lines.brLine, lines.tlLine, lines.trLine, lines.blLine).y;
 
-    return {tlX: tlX, tly: tlY, trX: trX, trY: trY, brX: brX};
+    return {tlX: tlX, tly: tlY, trX: trX, trY: trY, brX: brX, brY : brY};
 }
 
 /**
@@ -286,13 +287,14 @@ function generateTweaks(lines){
  * @param {Object} lastGuess - The last guess made by the algorithm.
  * @returns {Object} - The updated guess with the furthest tweaks applied.
  */
-function computeFurthestFromCenterOfMass(lines, lastGuess){
+function computeFurthestFromCenterOfMass(lines, lastGuess, retryCounter){
 
     var tlX = 0;
     var tlY = 0;
     var trX = 0;
     var trY = 0;
     var brX = 0;
+    var brY = 0;
 
     //In total how far is each corner from the center of mass of each measurement
     lines.forEach(line => {
@@ -303,6 +305,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
         trX = trX + tweaks.trX;
         trY = trY + tweaks.trY;
         brX = brX + tweaks.brX;
+        brY = brY + tweaks.brY;
 
     })
 
@@ -312,41 +315,64 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
     trX = trX/lines.length;
     trY = trY/lines.length;
     brX = brX/lines.length;
+    brY = brY/lines.length;
 
-    //Find which corner is the furthest off and is it in X or Y
-    const maxError = Math.max(
-        Math.abs(tlX),
-        Math.abs(tlY),
-        Math.abs(trX),
-        Math.abs(trY),
-        Math.abs(brX)
-    );
-
+    newGuess = JSON.parse(JSON.stringify(lastGuess));
 
     //Move the corner that is the furthest off in the direction needed
-    var scalor = -1;
-    if(maxError == Math.abs(tlX)){
+    var scalor = -1. * Math.pow(0.9, retryCounter + 1);
+    //if(maxError == Math.abs(tlX)){
         //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.x = lastGuess.tl.x + tlX*scalor;
-    }
-    if(maxError == Math.abs(tlY)){
+        newGuess.tl.x = lastGuess.tl.x + tlX*scalor;
+    //}
+    //if(maxError == Math.abs(tlY)){
         //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.y = lastGuess.tl.y + tlY*scalor;
-    }
-    else if(maxError == Math.abs(trX)){
+        newGuess.tl.y = lastGuess.tl.y + tlY*scalor;
+    //}
+    //else if(maxError == Math.abs(trX)){
         //console.log("Move trX by: " + trX/divisor);
-        lastGuess.tr.x = lastGuess.tr.x + trX*scalor;
-    }
-    else if(maxError == Math.abs(trY)){
+        newGuess.tr.x = lastGuess.tr.x + trX*scalor;
+    //}
+    //else if(maxError == Math.abs(trY)){
         //console.log("Move trY by: " + trY/divisor);
-        lastGuess.tr.y = lastGuess.tr.y + trY*scalor;
-    }
-    else if(maxError == Math.abs(brX)){
+        newGuess.tr.y = lastGuess.tr.y + trY*scalor;
+    //}
+    //else if(maxError == Math.abs(brX)){
         //console.log("Move brX by: " + brX/divisor);
-        lastGuess.br.x = lastGuess.br.x + brX*scalor;
-    }
+        //debug("Debug" + brX);
+        newGuess.br.x = lastGuess.br.x + brX*scalor;
+    //}
+        newGuess.br.y = lastGuess.br.y + brY*scalor;
     
-    return lastGuess;
+    return newGuess;
+}
+
+function findMedian(arr) {
+    arr.sort((a, b) => a - b);
+    const middleIndex = Math.floor(arr.length / 2);
+
+    if (arr.length % 2 === 0) {
+        return (arr[middleIndex - 1] + arr[middleIndex]) / 2;
+    } else {
+        return arr[middleIndex];
+    }
+}
+
+function removeOutlier(fitnesses, lines) {
+
+    var median_treshold = 10. * findMedian(fitnesses);
+    var filteredFitnesses = [];
+    var filteredLines = [];
+
+
+    for (let i = 0; i < fitnesses.length; i++) {
+        if (fitnesses[i] < median_treshold) {
+            filteredFitnesses.push(fitnesses[i]);
+            filteredLines.push(lines[i]);
+        }
+    } 
+
+    return {filteredFitnesses, filteredLines};
 }
 
 /**
@@ -355,7 +381,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
  * @param {Object} lastGuess - The last guess made by the algorithm.
  * @returns {Object} - An object containing the fitness of the guess and the lines used to calculate the fitness.
  */
-function computeLinesFitness(measurements, lastGuess){
+function computeLinesFitness(measurements, lastGuess, retryCounter){
     var fitnesses = [];
     var allLines = [];
     
@@ -365,15 +391,34 @@ function computeLinesFitness(measurements, lastGuess){
         fitnesses.push(fitness);
         allLines.push(lines);
     });
+
+    var {filteredFitnesses, filteredLines} = removeOutlier(fitnesses, allLines);
     
     //Computes the average fitness of all of the measurements
-    const fitness = calculateAverage(fitnesses);
+    //const fitness = calculateAverage(fitnesses);
 
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
-    lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
-    lastGuess.fitness = fitness;
+    newGuess = computeFurthestFromCenterOfMass(filteredLines, lastGuess, retryCounter);
+    
+    fitnesses = [];
+    allLines = [];
 
-    return lastGuess;
+    //Check each of the measurements against the guess
+    measurements.forEach(measurement => {
+        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, newGuess);
+        fitnesses.push(fitness);
+        allLines.push(lines);
+    });
+
+    var {filteredFitnesses, filteredLines} = removeOutlier(fitnesses, allLines);
+    //Computes the average fitness of all of the measurements
+    const fitness = calculateAverage(filteredFitnesses);
+
+    newGuess.fitness = fitness;
+
+    //debug("Retry: " + retryCounter + " has fitness: " + fitness); 
+
+    return newGuess;
 }
 
 
@@ -536,8 +581,26 @@ function printResults(guess){
     // console.log("brX error: " + (guess.br.x - trueBRX) + "mm at: " + guess.br.x);
 
     let output = document.getElementById('output');
-    let guessString = "Fitness: " + 1/guess.fitness + "(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")";
+    let guessString = output.value + "Fitness: " + 1/guess.fitness + "(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")";
     output.value += guessString + "\n";
+
+    console.log(guessString); 
+
+}
+
+function debug(toPrint){
+    // console.log("tlX error: " + (guess.tl.x - trueTLX) + "mm at: " + guess.tl.x);
+    // console.log("tlY error: " + (guess.tl.y - trueTLY) + "mm at: " + guess.tl.y);
+    // console.log("trX error: " + (guess.tr.x - trueTRX) + "mm at: " + guess.tr.x);
+    // console.log("trY error: " + (guess.tr.y - trueTRY) + "mm at: " + guess.tr.y);
+    // console.log("brX error: " + (guess.br.x - trueBRX) + "mm at: " + guess.br.x);
+
+    let output = document.getElementById('output');
+    let guessString = output.value + toPrint;
+    output.value = guessString + "\n";
+
+    output.scrollTop
+    output.scrollTop = output.scrollHeight;
 
     console.log(guessString); 
 
@@ -646,27 +709,61 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
 function findMaxFitness(initialGuess, measurements) {
     let currentGuess = JSON.parse(JSON.stringify(initialGuess));
     let stagnantCounter = 0;
+    let globalOptCounter = 0;
     let totalCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
+    bestGuess.fitness = Number.MAX_VALUE;
 
     function iterate() {
-        if (stagnantCounter < 100 && totalCounter < 200000) {
+        if (globalOptCounter < 50 && totalCounter < 200000) {
+            if (stagnantCounter >= 3)
+            {
+                stagnantCounter = 0;
+                globalOptCounter++;
+                currentGuess = JSON.parse(JSON.stringify(bestGuess));
+                //debug("Befor " + currentGuess.tl.x);
+                currentGuess.tl.x += (Math.random() * 2. - 1.) * 10.;
+                //debug("After " + currentGuess.tl.y);
+                currentGuess.tl.y += (Math.random() * 2. - 1.) * 10.;
+                currentGuess.tr.x += (Math.random() * 2. - 1.) * 10.;
+                currentGuess.tr.y += (Math.random() * 2. - 1.) * 10.;
+                currentGuess.br.x += (Math.random() * 2. - 1.) * 10.;
+                currentGuess.br.y += (Math.random() * 2. - 1.) * 10.;
+                currentGuess = computeLinesFitness(measurements, currentGuess, stagnantCounter);
+                //debug("Lokal " + currentGuess.fitness);
+                //debug("Current fittness " + 1/currentGuess.fitness);
+                //debug("Global counter " + globalOptCounter);
+            }
             //Clear the canvass
             clearCanvas();
 
-            currentGuess = computeLinesFitness(measurements, currentGuess);
-            
-            if (1/currentGuess.fitness > 1/bestGuess.fitness) {
-                bestGuess = JSON.parse(JSON.stringify(currentGuess));
+            currentGuess_prime = computeLinesFitness(measurements, currentGuess, stagnantCounter);
+            //currentGuess = currentGuess_prime;
+            //debug("best " + bestGuess.fitness);
+            //debug("new " + currentGuess_prime.fitness);
+            if (currentGuess.fitness > currentGuess_prime.fitness)
+            {
+                currentGuess = currentGuess_prime;
                 stagnantCounter = 0;
+                //debug("Debug brx" + currentGuess.br.x);
+                //debug("Lokal update fitnness " + currentGuess.fitness);
+                //debug("Lokal update fitnness Prime " + currentGuess_prime.fitness);
             } else {
                 stagnantCounter++;
             }
+
+            if (1/currentGuess_prime.fitness > 1/bestGuess.fitness) {
+                //debug("Found new best one");
+                currentGuess = currentGuess_prime;
+                bestGuess = JSON.parse(JSON.stringify(currentGuess)); 
+                stagnantCounter = 0;
+                globalOptCounter = 0;
+            }
             totalCounter++;
-            console.log("Total Counter: " + totalCounter);
+            //console.log("Total Counter: " + totalCounter);
 
             if(totalCounter % 100 == 0){
-                document.getElementById('output').value = "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + "\n";
+                document.getElementById('output').value += "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + "\n";
             }
 
             // Schedule the next iteration
@@ -745,7 +842,7 @@ function clearCanvas() {
 const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
     clearCanvas();
-    initialGuess = computeLinesFitness(measurements, initialGuess);
+    initialGuess = computeLinesFitness(measurements, initialGuess, 0);
     console.log("Fitness: " + 1/initialGuess.fitness);
     printResults(initialGuess);
 });
@@ -756,7 +853,7 @@ const compute1kButton = document.getElementById('compute-1k-button');
 compute1kButton.addEventListener('click', () => {
     for(let i = 0; i < 1000; i++){
         clearCanvas();
-        initialGuess = computeLinesFitness(measurements, initialGuess);
+        initialGuess = computeLinesFitness(measurements, initialGuess, 0);
         console.log("Fitness: " + 1/initialGuess.fitness);
     }
     printResults(initialGuess);
@@ -767,7 +864,7 @@ compute10kButton.addEventListener('click', () => {
     let i = 0;
     function loop() {
         clearCanvas();
-        initialGuess = computeLinesFitness(measurements, initialGuess);
+        initialGuess = computeLinesFitness(measurements, initialGuess, 0);
         console.log("Fitness: " + 1/initialGuess.fitness);
         i++;
         if (i < 10000) {
@@ -801,6 +898,9 @@ computeEndButton.addEventListener('click', () => {
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', () => {
 
+     
+    debug("Convergence called")
+
     function computeGuess() {
         // Clear the canvas
         clearCanvas();
@@ -811,14 +911,15 @@ computeConvergeButton.addEventListener('click', () => {
         guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
         guessThisTime.tr.x = guessThisTime.tr.x + (Math.random() * 400) - 200;
         guessThisTime.tr.y = guessThisTime.tr.y + (Math.random() * 400) - 200;
-        guessThisTime.bl.x = guessThisTime.bl.x + (Math.random() * 400) - 200;
-
+        guessThisTime.br.x = guessThisTime.bl.x + (Math.random() * 400) - 200;
+        guessThisTime.br.y = guessThisTime.bl.y + (Math.random() * 400) - 200;
+        
         var result = findMaxFitness(guessThisTime, measurements);
         
-        printResults(result);
+        //printResults(result);
 
         // Call computeGuess again after a delay
-        setTimeout(computeGuess, 0);
+        //setTimeout(computeGuess, 0);
     }
 
     // Start the loop
@@ -844,7 +945,17 @@ var initialGuess = {
     bl: {x: 0, y: 0},
     br: {x: 3600, y: 0},
     fitness: 0
+    }
+    /*
+var initialGuess = {
+    tl: {x: -38, y: 1685},
+    tr: {x: 2882, y: 1685},
+    bl: {x: 0, y: 0},
+    br: {x: 2847, y: 0},
+    fitness: 0
 }
+*/
+
 
 
 window.onload = function() {
@@ -876,11 +987,13 @@ calculateTensions(centerX, centerY, initialGuess);
 
 
 var measurements = [{bl:2220.79, br:2215.53, tr:2200.01, tl:2202.68},{bl:2005.23, br:2007.33, tr:2467.03, tl:2459.84},{bl:1240.99, br:2857.85, tr:3193.87, tl:1872.11},{bl:1334.59, br:2871.71, tr:3124.59, tl:1786.39},{bl:1407.65, br:2905.60, tr:3077.22, tl:1702.18},{bl:1484.94, br:2943.69, tr:3032.42, tl:1619.77},{bl:1564.23, br:2984.37, tr:2990.27, tl:1539.52},]
+//var measurements = [{bl:1644.52,   br:1649.85,   tr:1685.31,   tl:1689.35},{bl:1584.84,   br:1585.84,   tr:1753.68,   tl:1758.79},{bl:1365.79,   br:1817.09,   tr:1965.76,   tl:1553.35},{bl:1434.77,   br:1869.42,   tr:1905.22,   tl:1479.28},{bl:1510.89,   br:1928.46,   tr:1853.49,   tl:1411.28},{bl:1711.38,   br:1710.90,   tr:1624.33,   tl:1632.74},{bl:1923.43,   br:1512.37,   tr:1407.19,   tl:1859.15},{bl:1863.85,   br:1434.05,   tr:1477.19,   tl:1911.75},{bl:1811.64,   br:1370.03,   tr:1552.93,   tl:1970.84},{bl:1766.39,   br:1314.00,   tr:1635.32,   tl:2033.98},{bl:1532.67,   br:1541.59,   tr:1827.01,   tl:1824.31},{bl:1305.16,   br:1775.21,   tr:2031.45,   tl:1631.39},{bl:1087.55,   br:2012.63,   tr:2245.17,   tl:1459.92},{bl:1159.97,   br:2052.38,   tr:2182.65,   tl:1367.61},{bl:1240.12,   br:2098.87,   tr:2130.12,   tl:1280.52},{bl:1327.46,   br:2151.62,   tr:2083.35,   tl:1205.53},{bl:1420.62,   br:2210.19,   tr:2043.88,   tl:1134.75},{bl:1593.22,   br:1988.19,   tr:1805.67,   tl:1352.53},{bl:1784.48,   br:1782.14,   tr:1572.91,   tl:1579.99},{bl:1988.70,   br:1591.52,   tr:1347.82,   tl:1813.13},{bl:2202.51,   br:1420.20,   tr:1128.61,   tl:2050.29},{bl:2142.21,   br:1325.80,   tr:1202.55,   tl:2090.31},{bl:2087.69,   br:1240.17,   tr:1282.48,   tl:2136.84},{bl:2041.19,   br:1166.07,   tr:1369.09,   tl:2189.54},{bl:2004.05,   br:1092.65,   tr:1461.30,   tl:2247.99},{bl:1970.66,   br:1034.05,   tr:1556.93,   tl:2311.36},{bl:1729.06,   br:1264.89,   tr:1721.43,   tl:2095.64},{bl:1489.47,   br:1500.04,   tr:1904.60,   tl:1898.55},{bl:1254.27,   br:1739.33,   tr:2101.60,   tl:1714.89},{bl:1025.79,   br:1981.31,   tr:2308.98,   tl:1548.92},{bl:810.08,   br:2225.20,   tr:2524.07,   tl:1410.71},{bl:887.58,   br:2254.11,   tr:2459.60,   tl:1304.09},{bl:974.51,   br:2289.62,   tr:2405.89,   tl:1202.66},{bl:1068.81,   br:2331.42,   tr:2359.07,   tl:1107.71},{bl:1168.93,   br:2378.96,   tr:2317.01,   tl:1018.23},{bl:1273.49,   br:2432.06,   tr:2282.91,   tl:933.11},{bl:1381.71,   br:2490.33,   tr:2253.51,   tl:858.30},{bl:1518.03,   br:2265.91,   tr:2008.88,   tl:1073.09},{bl:1680.80,   br:2061.47,   tr:1770.42,   tl:1300.23},{bl:1863.03,   br:1865.42,   tr:1531.84,   tl:1534.92},{bl:2059.50,   br:1678.79,   tr:1296.99,   tl:1773.64},{bl:2266.62,   br:1517.89,   tr:1069.03,   tl:2014.63},{bl:2481.54,   br:1378.66,   tr:853.38,   tl:2257.88},{bl:2418.21,   br:1273.83,   tr:929.59,   tl:2287.74},{bl:2365.01,   br:1172.28,   tr:1015.19,   tl:2323.92},{bl:2317.58,   br:1071.34,   tr:1108.41,   tl:2366.28},{bl:2277.04,   br:978.32,   tr:1207.36,   tl:2414.26},{bl:2240.61,   br:895.68,   tr:1310.70,   tl:2467.71},{bl:2213.58,   br:819.34,   tr:1417.67,   tl:2526.19},{bl:2192.54,   br:759.59,   tr:1524.02,   tl:2587.99},{bl:1945.87,   br:989.50,   tr:1654.85,   tl:2367.11},{bl:1700.25,   br:1226.82,   tr:1810.98,   tl:2166.71},{bl:1455.96,   br:1468.66,   tr:1986.36,   tl:1977.61},{bl:1214.05,   br:1712.77,   tr:2176.37,   tl:1801.14},{bl:976.22,   br:1958.24,   tr:2377.47,   tl:1642.10},{bl:746.37,   br:2204.55,   tr:2587.15,   tl:1514.86},{bl:533.63,   br:2451.83,   tr:2803.54,   tl:1420.59},{bl:621.71,   br:2471.80,   tr:2737.03,   tl:1302.67},{bl:719.25,   br:2498.05,   tr:2683.09,   tl:1188.26},{bl:823.97,   br:2530.33,   tr:2633.68,   tl:1075.05},{bl:933.74,   br:2568.18,   tr:2591.07,   tl:965.29},{bl:1046.98,   br:2611.40,   tr:2553.60,   tl:858.72},{bl:1162.44,   br:2659.89,   tr:2523.34,   tl:758.68},{bl:1279.82,   br:2713.21,   tr:2496.80,   tl:666.22},{bl:1398.52,   br:2771.29,   tr:2479.18,   tl:583.78},{bl:1492.18,   br:2546.09,   tr:2227.72,   tl:794.50},{bl:1619.32,   br:2336.28,   tr:1986.34,   tl:1022.51},{bl:1772.85,   br:2139.66,   tr:1743.33,   tl:1258.73},{bl:1946.44,   br:1950.23,   tr:1499.41,   tl:1499.76},{bl:2135.21,   br:1770.76,   tr:1257.69,   tl:1743.26},{bl:2335.63,   br:1617.62,   tr:1020.35,   tl:1988.26},{bl:2544.74,   br:1486.51,   tr:790.55,   tl:2234.50},{bl:2760.81,   br:1397.46,   tr:577.62,   tl:2481.31},{bl:2697.43,   br:1277.45,   tr:661.19,   tl:2502.08},{bl:2643.30,   br:1164.72,   tr:755.72,   tl:2528.91},{bl:2594.14,   br:1046.59,   tr:858.35,   tl:2561.65},{bl:2550.41,   br:934.94,   tr:966.03,   tl:2599.92},{bl:2512.94,   br:827.00,   tr:1077.47,   tl:2643.45},{bl:2481.24,   br:723.89,   tr:1191.61,   tl:2692.22},{bl:2456.00,   br:630.74,   tr:1307.71,   tl:2745.84},{bl:2438.46,   br:548.26,   tr:1425.40,   tl:2803.97},]
+//var measurements = [{bl:1646.53,   br:1635.70,   tr:1683.02,   tl:1694.55},{bl:1589.44,   br:1589.20,   tr:1746.22,   tl:1753.99},{bl:1370.89,   br:1810.15,   tr:1958.01,   tl:1560.76},{bl:1436.48,   br:1862.92,   tr:1902.32,   tl:1485.00},{bl:1513.94,   br:1921.50,   tr:1849.44,   tl:1416.31},{bl:1713.34,   br:1716.10,   tr:1623.06,   tl:1629.28},{bl:1924.88,   br:1516.00,   tr:1404.51,   tl:1855.78},{bl:1868.81,   br:1439.78,   tr:1469.82,   tl:1908.08},{bl:1816.26,   br:1370.86,   tr:1545.48,   tl:1965.96},{bl:1770.78,   br:1305.48,   tr:1632.82,   tl:2036.10},{bl:1537.42,   br:1532.95,   tr:1821.29,   tl:1836.71},{bl:1310.11,   br:1764.55,   tr:2024.59,   tl:1645.09},{bl:1092.73,   br:1999.66,   tr:2235.62,   tl:1471.22},{bl:1164.84,   br:2038.57,   tr:2180.58,   tl:1379.29},{bl:1243.12,   br:2084.86,   tr:2127.34,   tl:1293.00},{bl:1329.30,   br:2137.17,   tr:2080.24,   tl:1213.37},{bl:1422.10,   br:2199.14,   tr:2039.78,   tl:1141.79},{bl:1595.96,   br:1988.60,   tr:1802.76,   tl:1357.71},{bl:1786.52,   br:1784.86,   tr:1569.75,   tl:1583.84},{bl:1991.79,   br:1594.37,   tr:1342.70,   tl:1814.96},{bl:2205.84,   br:1422.47,   tr:1125.51,   tl:2049.76},{bl:2148.21,   br:1329.32,   tr:1198.74,   tl:2088.67},{bl:2095.21,   br:1241.71,   tr:1278.00,   tl:2136.35},{bl:2048.33,   br:1161.06,   tr:1365.57,   tl:2189.00},{bl:2008.36,   br:1088.74,   tr:1458.06,   tl:2249.37},{bl:1975.55,   br:1029.63,   tr:1549.26,   tl:2309.13},{bl:1733.50,   br:1256.15,   tr:1715.00,   tl:2109.92},{bl:1494.28,   br:1491.05,   tr:1897.82,   tl:1913.28},{bl:1258.92,   br:1730.29,   tr:2094.99,   tl:1730.47},{bl:1030.74,   br:1970.82,   tr:2301.64,   tl:1566.35},{bl:815.63,   br:2209.66,   tr:2513.23,   tl:1427.54},{bl:890.89,   br:2239.68,   tr:2460.55,   tl:1320.76},{bl:975.37,   br:2273.65,   tr:2407.01,   tl:1217.57},{bl:1070.28,   br:2315.43,   tr:2358.85,   tl:1118.71},{bl:1172.47,   br:2364.08,   tr:2316.48,   tl:1025.64},{bl:1274.23,   br:2418.06,   tr:2280.18,   tl:940.09},{bl:1384.31,   br:2477.55,   tr:2250.28,   tl:864.09},{bl:1521.66,   br:2268.89,   tr:2006.85,   tl:1077.68},{bl:1681.55,   br:2062.16,   tr:1765.41,   tl:1304.22},{bl:1865.90,   br:1866.06,   tr:1526.48,   tl:1538.62},{bl:2062.41,   br:1684.30,   tr:1291.77,   tl:1776.26},{bl:2270.42,   br:1522.08,   tr:1064.05,   tl:2015.90},{bl:2483.74,   br:1386.28,   tr:849.14,   tl:2256.06},{bl:2427.68,   br:1278.25,   tr:925.36,   tl:2285.27},{bl:2374.29,   br:1173.69,   tr:1011.42,   tl:2319.77},{bl:2326.37,   br:1073.48,   tr:1104.79,   tl:2361.95},{bl:2284.36,   br:979.01,   tr:1203.16,   tl:2411.32},{bl:2248.55,   br:891.99,   tr:1304.33,   tl:2465.78},{bl:2218.99,   br:815.09,   tr:1418.76,   tl:2523.95},{bl:2196.49,   br:751.75,   tr:1519.50,   tl:2586.11},{bl:1950.05,   br:982.10,   tr:1646.17,   tl:2385.54},{bl:1704.45,   br:1219.11,   tr:1803.65,   tl:2185.19},{bl:1460.35,   br:1461.25,   tr:1978.04,   tl:1996.02},{bl:1218.57,   br:1702.99,   tr:2170.08,   tl:1821.60},{bl:981.02,   br:1946.84,   tr:2371.17,   tl:1666.51},{bl:751.53,   br:2192.97,   tr:2579.40,   tl:1536.70},{bl:540.70,   br:2432.51,   tr:2790.29,   tl:1439.08},{bl:622.45,   br:2452.86,   tr:2740.43,   tl:1321.52},{bl:719.61,   br:2477.81,   tr:2686.66,   tl:1205.44},{bl:824.70,   br:2508.90,   tr:2637.69,   tl:1091.23},{bl:931.61,   br:2547.11,   tr:2593.85,   tl:979.86},{bl:1041.13,   br:2591.91,   tr:2555.38,   tl:872.16},{bl:1156.84,   br:2641.13,   tr:2522.50,   tl:769.66},{bl:1274.21,   br:2697.78,   tr:2495.56,   tl:674.59},{bl:1394.86,   br:2756.16,   tr:2474.61,   tl:590.97},{bl:1487.37,   br:2547.58,   tr:2227.63,   tl:800.16},{bl:1616.13,   br:2338.69,   tr:1981.33,   tl:1028.87},{bl:1772.34,   br:2138.64,   tr:1736.13,   tl:1265.01},{bl:1947.96,   br:1950.16,   tr:1492.41,   tl:1505.93},{bl:2139.23,   br:1776.92,   tr:1251.15,   tl:1749.09},{bl:2339.04,   br:1623.87,   tr:1014.33,   tl:1993.03},{bl:2546.62,   br:1497.11,   tr:785.66,   tl:2235.01},{bl:2760.81,   br:1403.85,   tr:574.91,   tl:2480.37},{bl:2707.17,   br:1285.31,   tr:657.20,   tl:2498.14},{bl:2653.51,   br:1168.04,   tr:752.02,   tl:2523.61},{bl:2604.72,   br:1052.57,   tr:853.06,   tl:2556.74},{bl:2561.14,   br:939.46,   tr:961.05,   tl:2594.89},{bl:2522.99,   br:830.05,   tr:1072.04,   tl:2637.85},{bl:2490.54,   br:725.35,   tr:1186.74,   tl:2687.77},{bl:2464.08,   br:628.02,   tr:1305.66,   tl:2742.37},{bl:2443.73,   br:542.47,   tr:1424.57,   tl:2801.77},]
 //Do projection and scaling
 // measurements = scaleMeasurements(measurements, 0.9945);
 measurements = projectMeasurements(measurements);
 
-computeLinesFitness(measurements, initialGuess);
+computeLinesFitness(measurements, initialGuess, 0);
 
 
 
