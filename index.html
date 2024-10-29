@@ -294,7 +294,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess, retryCounter){
     var trX = 0;
     var trY = 0;
     var brX = 0;
-    var brY = 0;
+    //var brY = 0;
 
     //In total how far is each corner from the center of mass of each measurement
     lines.forEach(line => {
@@ -305,7 +305,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess, retryCounter){
         trX = trX + tweaks.trX;
         trY = trY + tweaks.trY;
         brX = brX + tweaks.brX;
-        brY = brY + tweaks.brY;
+        //brY = brY + tweaks.brY;
 
     })
 
@@ -315,7 +315,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess, retryCounter){
     trX = trX/lines.length;
     trY = trY/lines.length;
     brX = brX/lines.length;
-    brY = brY/lines.length;
+    //brY = brY/lines.length;
 
     newGuess = JSON.parse(JSON.stringify(lastGuess));
 
@@ -342,7 +342,7 @@ function computeFurthestFromCenterOfMass(lines, lastGuess, retryCounter){
         //debug("Debug" + brX);
         newGuess.br.x = lastGuess.br.x + brX*scalor;
     //}
-        newGuess.br.y = lastGuess.br.y + brY*scalor;
+        newGuess.br.y = 0;//lastGuess.br.y + brY*scalor;
     
     return newGuess;
 }
@@ -360,7 +360,7 @@ function findMedian(arr) {
 
 function removeOutlier(fitnesses, lines) {
 
-    var median_treshold = 10. * findMedian(fitnesses);
+    var median_treshold = 1. * findMedian(fitnesses);
     var filteredFitnesses = [];
     var filteredLines = [];
 
@@ -617,7 +617,7 @@ function projectMeasurement(measurement){
     const trZ = 69;
     const blZ = 47;
     const brZ = 89;
-
+    
     const tl = Math.sqrt(Math.pow(measurement.tl,2) - Math.pow(tlZ,2));
     const tr = Math.sqrt(Math.pow(measurement.tr,2) - Math.pow(trZ,2));
     const bl = Math.sqrt(Math.pow(measurement.bl,2) - Math.pow(blZ,2));
@@ -728,7 +728,7 @@ function findMaxFitness(initialGuess, measurements) {
                 currentGuess.tr.x += (Math.random() * 2. - 1.) * 10.;
                 currentGuess.tr.y += (Math.random() * 2. - 1.) * 10.;
                 currentGuess.br.x += (Math.random() * 2. - 1.) * 10.;
-                currentGuess.br.y += (Math.random() * 2. - 1.) * 10.;
+                //currentGuess.br.y += (Math.random() * 2. - 1.) * 10.;
                 currentGuess = computeLinesFitness(measurements, currentGuess, stagnantCounter);
                 //debug("Lokal " + currentGuess.fitness);
                 //debug("Current fittness " + 1/currentGuess.fitness);
@@ -947,14 +947,14 @@ var initialGuess = {
     fitness: 0
     }
     /*
-var initialGuess = {
-    tl: {x: -38, y: 1685},
-    tr: {x: 2882, y: 1685},
-    bl: {x: 0, y: 0},
-    br: {x: 2847, y: 0},
-    fitness: 0
-}
-*/
+    var initialGuess = {
+        tl: {x: -38, y: 1685},
+        tr: {x: 2882, y: 1685},
+        bl: {x: 0, y: 0},
+        br: {x: 2847, y: 0},
+        fitness: 0
+    }
+    */
 
 
 
