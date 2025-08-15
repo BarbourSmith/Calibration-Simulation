@@ -908,19 +908,30 @@ function parseCalibrationData(inputText) {
         // Remove any trailing comma
         cleanText = cleanText.replace(/,$/, '');
         
-        // Regex to match measurement objects like {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76}
-        const measurementRegex = /\{[^}]*bl\s*:\s*([0-9.-]+)[^}]*br\s*:\s*([0-9.-]+)[^}]*tr\s*:\s*([0-9.-]+)[^}]*tl\s*:\s*([0-9.-]+)[^}]*\}/g;
+        // Regex to match measurement objects - handle properties in any order
+        const objectRegex = /\{([^}]+)\}/g;
         
         const measurements = [];
         let match;
         
-        while ((match = measurementRegex.exec(cleanText)) !== null) {
-            measurements.push({
-                bl: parseFloat(match[1]),
-                br: parseFloat(match[2]),
-                tr: parseFloat(match[3]),
-                tl: parseFloat(match[4])
-            });
+        while ((match = objectRegex.exec(cleanText)) !== null) {
+            const objectContent = match[1];
+            
+            // Extract individual properties using separate regex patterns
+            const blMatch = objectContent.match(/bl\s*:\s*([0-9.-]+)/);
+            const brMatch = objectContent.match(/br\s*:\s*([0-9.-]+)/);
+            const trMatch = objectContent.match(/tr\s*:\s*([0-9.-]+)/);
+            const tlMatch = objectContent.match(/tl\s*:\s*([0-9.-]+)/);
+            
+            // Only add if all four properties are found
+            if (blMatch && brMatch && trMatch && tlMatch) {
+                measurements.push({
+                    bl: parseFloat(blMatch[1]),
+                    br: parseFloat(brMatch[1]),
+                    tr: parseFloat(trMatch[1]),
+                    tl: parseFloat(tlMatch[1])
+                });
+            }
         }
         
         if (measurements.length === 0) {
