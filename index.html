@@ -19,6 +19,13 @@
 
 <---click this button to see the simulation find the corners
 
+<div>
+    <label for="calibration-input">Calibration Data (paste your measurements here):</label><br>
+    <textarea id="calibration-input" style="width: 1000px;" rows="6" placeholder="Paste calibration data like: {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76},{bl:2132.14, br:1584.18, tr:1955.15, tl:2154.52},..."></textarea><br>
+    <button id="parse-data-button">Parse Calibration Data</button>
+    <span id="parse-status" style="margin-left: 10px; font-weight: bold;"></span>
+</div>
+
 <div id = "views"></div>
 <div>
     <textarea id="output" style="width: 1000px;" rows="16"></textarea>
@@ -850,6 +857,38 @@ var initialGuess = {
 window.onload = function() {
     let output = document.getElementById('output');
     output.value = "";
+    
+    // Add event handler for the parse button
+    document.getElementById('parse-data-button').addEventListener('click', function() {
+        const input = document.getElementById('calibration-input');
+        const statusSpan = document.getElementById('parse-status');
+        
+        if (!input.value.trim()) {
+            statusSpan.textContent = 'Please enter calibration data';
+            statusSpan.style.color = 'red';
+            return;
+        }
+        
+        try {
+            const parsedMeasurements = parseCalibrationData(input.value);
+            
+            // Update the global measurements variable
+            measurements = parsedMeasurements;
+            measurements = projectMeasurements(measurements);
+            
+            statusSpan.textContent = `✓ Parsed ${parsedMeasurements.length} measurements successfully!`;
+            statusSpan.style.color = 'green';
+            
+            // Clear output and canvas, then recompute with new data
+            output.value = "";
+            clearCanvas();
+            computeLinesFitness(measurements, initialGuess);
+            
+        } catch (error) {
+            statusSpan.textContent = '✗ ' + error.message;
+            statusSpan.style.color = 'red';
+        }
+    });
 }
 
 const centerX = initialWidth/2;
@@ -857,6 +896,54 @@ const centerY = initialHeight/2;
 
 calculateTensions(centerX, centerY, initialGuess);
 
+
+//Function to parse calibration data from text input
+function parseCalibrationData(inputText) {
+    try {
+        // Remove any leading/trailing whitespace
+        let cleanText = inputText.trim();
+        
+        // Remove optional square brackets
+        cleanText = cleanText.replace(/^\[/, '').replace(/\]$/, '');
+        
+        // Remove any trailing comma
+        cleanText = cleanText.replace(/,$/, '');
+        
+        // Regex to match measurement objects - handle properties in any order
+        const objectRegex = /\{([^}]+)\}/g;
+        
+        const measurements = [];
+        let match;
+        
+        while ((match = objectRegex.exec(cleanText)) !== null) {
+            const objectContent = match[1];
+            
+            // Extract individual properties using separate regex patterns
+            const blMatch = objectContent.match(/bl\s*:\s*([0-9.-]+)/);
+            const brMatch = objectContent.match(/br\s*:\s*([0-9.-]+)/);
+            const trMatch = objectContent.match(/tr\s*:\s*([0-9.-]+)/);
+            const tlMatch = objectContent.match(/tl\s*:\s*([0-9.-]+)/);
+            
+            // Only add if all four properties are found
+            if (blMatch && brMatch && trMatch && tlMatch) {
+                measurements.push({
+                    bl: parseFloat(blMatch[1]),
+                    br: parseFloat(brMatch[1]),
+                    tr: parseFloat(trMatch[1]),
+                    tl: parseFloat(tlMatch[1])
+                });
+            }
+        }
+        
+        if (measurements.length === 0) {
+            throw new Error('No valid measurements found');
+        }
+        
+        return measurements;
+    } catch (error) {
+        throw new Error('Failed to parse calibration data: ' + error.message);
+    }
+}
 
 //Un-comment this code to use the simulated measurements
 
