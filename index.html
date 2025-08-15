@@ -879,8 +879,9 @@ window.onload = function() {
             statusSpan.textContent = `✓ Parsed ${parsedMeasurements.length} measurements successfully!`;
             statusSpan.style.color = 'green';
             
-            // Clear output and recompute with new data
+            // Clear output and canvas, then recompute with new data
             output.value = "";
+            clearCanvas();
             computeLinesFitness(measurements, initialGuess);
             
         } catch (error) {
