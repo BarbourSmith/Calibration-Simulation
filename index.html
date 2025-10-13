@@ -680,19 +680,21 @@ function findMaxFitness(initialGuess, measurements) {
     currentGuess = JSON.parse(JSON.stringify(bestGuess));
 
     function aggressiveExplore() {
-        if (aggressiveCounter < 500) {
+        if (aggressiveCounter < 2500) {
             clearCanvas();
+
+            let randomJumpDist = 200;
 
             // Create a new guess with aggressive random jumps
             let testGuess = JSON.parse(JSON.stringify(bestGuess));
-            testGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
-            testGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
-            testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
-            testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
-            testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
-            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
-            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
-            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
+            testGuess.tl.x = bestGuess.tl.x + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.tl.y = bestGuess.tl.y + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.tr.x = bestGuess.tr.x + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.tr.y = bestGuess.tr.y + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.br.x = bestGuess.br.x + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.br.y = bestGuess.br.y + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.bl.x = bestGuess.bl.x + Math.random() * randomJumpDist - randomJumpDist / 2;
+            testGuess.bl.y = bestGuess.bl.y + Math.random() * randomJumpDist - randomJumpDist / 2;
 
             testGuess = computeLinesFitness(measurements, testGuess);
 
