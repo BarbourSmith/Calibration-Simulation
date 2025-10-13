@@ -659,10 +659,10 @@ function findMaxFitness(initialGuess, measurements) {
     let totalCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
     let stepSize = 1.0;  // Start with full correction
-    let previousFitness = 0;
+    let consecutiveDecline = 0;
 
     function iterate() {
-        if (stagnantCounter < 150 && totalCounter < 200000) {
+        if (stagnantCounter < 200 && totalCounter < 200000 && consecutiveDecline < 20) {
             //Clear the canvass
             clearCanvas();
 
@@ -675,20 +675,25 @@ function findMaxFitness(initialGuess, measurements) {
                 const improvement = currentFitnessValue - bestFitnessValue;
                 bestGuess = JSON.parse(JSON.stringify(currentGuess));
                 stagnantCounter = 0;
+                consecutiveDecline = 0;
                 
                 // Adaptive step sizing: if we're improving well, keep step size
                 // If improvement is slowing, reduce step size for fine-tuning
                 if (improvement < 0.001 && stepSize > 0.3) {
-                    stepSize *= 0.95;  // Gradually reduce step size as we converge
-                } else if (improvement > 0.01) {
-                    stepSize = Math.min(1.0, stepSize * 1.05);  // Increase if making good progress
+                    stepSize *= 0.97;  // Gradually reduce step size as we converge
+                } else if (improvement > 0.01 && stepSize < 1.0) {
+                    stepSize = Math.min(1.0, stepSize * 1.03);  // Increase if making good progress
                 }
             } else {
                 stagnantCounter++;
-                // If stagnating, reduce step size to search more carefully
-                if (stagnantCounter > 10 && stepSize > 0.1) {
-                    stepSize *= 0.9;
-                    stagnantCounter = 0;  // Reset counter after adjusting step size
+                consecutiveDecline++;
+                
+                // If fitness is declining for too long, stop early
+                if (consecutiveDecline > 10 && stepSize < 0.5) {
+                    // Restore to best and try smaller steps from there
+                    currentGuess = JSON.parse(JSON.stringify(bestGuess));
+                    stepSize *= 0.7;
+                    consecutiveDecline = 0;
                 }
             }
             totalCounter++;
