@@ -219,16 +219,16 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
 function magneticallyAttractedLinesFitness(measurement, individual){
 
     //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
-    if(measurement.tlTheta == undefined){
+    if(typeof measurement.tlTheta === 'undefined'){
         measurement.tlTheta = -.3;
     }
-    if(measurement.trTheta == undefined){
+    if(typeof measurement.trTheta === 'undefined'){
         measurement.trTheta = 3.5;
     }
-    if(measurement.blTheta == undefined){
+    if(typeof measurement.blTheta === 'undefined'){
         measurement.blTheta = .5;
     }
-    if(measurement.brTheta == undefined){
+    if(typeof measurement.brTheta === 'undefined'){
         measurement.brTheta = 2.6;
     }
 
