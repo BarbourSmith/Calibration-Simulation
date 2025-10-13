@@ -198,6 +198,34 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
 }
 
 /**
+ * Adaptively walks the lines with progressively smaller step sizes for efficiency.
+ * @param {Object} tlLine - The top-left line in the set.
+ * @param {Object} trLine - The top-right line in the set.
+ * @param {Object} blLine - The bottom-left line in the set.
+ * @param {Object} brLine - The bottom-right line in the set.
+ * @param {number} initialStepSize - The initial step size to use.
+ * @param {number} minStepSize - The minimum step size to use before stopping.
+ * @returns {Object} - An object containing the final positions of each line.
+ */
+function walkLinesAdaptive(tlLine, trLine, blLine, brLine, initialStepSize, minStepSize) {
+  let stepSize = initialStepSize;
+  
+  // Walk with progressively smaller step sizes
+  while (stepSize >= minStepSize) {
+    let result = walkLines(tlLine, trLine, blLine, brLine, stepSize);
+    tlLine = result.tlLine;
+    trLine = result.trLine;
+    blLine = result.blLine;
+    brLine = result.brLine;
+    
+    // Reduce step size by factor of 10 for next iteration
+    stepSize *= 0.1;
+  }
+  
+  return { tlLine, trLine, blLine, brLine };
+}
+
+/**
  * Computes the fitness of a set of lines based on how close their endpoints are to each other.
  * @param {Object} measurement - An object containing the initial theta values and lengths for each line.
  * @param {Object} individual - An object containing the x and y coordinates for each line's starting point.
@@ -226,14 +254,9 @@ function magneticallyAttractedLinesFitness(measurement, individual){
     var blLine = computeLineEndPoint({xBegin: individual.bl.x, yBegin: individual.bl.y, theta: measurement.blTheta, length: measurement.bl});
     var brLine = computeLineEndPoint({xBegin: individual.br.x, yBegin: individual.br.y, theta: measurement.brTheta, length: measurement.br});
 
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .1);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .01);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .001);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .0001);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .00001);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .000001);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .0000001);
-    var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .00000001);
+    // Use adaptive walkLines with automatic step size reduction
+    var result = walkLinesAdaptive(tlLine, trLine, blLine, brLine, 0.1, 0.00000001);
+    var {tlLine, trLine, blLine, brLine} = result;
 
     measurement.tlTheta = tlLine.theta;
     measurement.trTheta = trLine.theta;
@@ -291,9 +314,10 @@ function generateTweaks(lines){
  * Computes all of the tweaks and summarizes them to move the guess furthest from the center of mass of the lines.
  * @param {Array} lines - An array of lines to compute the tweaks for.
  * @param {Object} lastGuess - The last guess made by the algorithm.
+ * @param {number} stepSize - Multiplier for the correction step (default 1.0 for full correction).
  * @returns {Object} - The updated guess with the furthest tweaks applied.
  */
-function computeFurthestFromCenterOfMass(lines, lastGuess){
+function computeFurthestFromCenterOfMass(lines, lastGuess, stepSize = 1.0){
 
     var tlX = 0;
     var tlY = 0;
@@ -320,38 +344,16 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
     trY = trY/lines.length;
     brX = brX/lines.length;
 
-    //Find which corner is the furthest off and is it in X or Y
-    const maxError = Math.max(
-        Math.abs(tlX),
-        Math.abs(tlY),
-        Math.abs(trX),
-        Math.abs(trY),
-        Math.abs(brX)
-    );
-
-
-    //Move the corner that is the furthest off in the direction needed
-    var scalor = -1;
-    if(maxError == Math.abs(tlX)){
-        //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.x = lastGuess.tl.x + tlX*scalor;
-    }
-    if(maxError == Math.abs(tlY)){
-        //console.log("Move tlY by: " + tlY/divisor);
-        lastGuess.tl.y = lastGuess.tl.y + tlY*scalor;
-    }
-    else if(maxError == Math.abs(trX)){
-        //console.log("Move trX by: " + trX/divisor);
-        lastGuess.tr.x = lastGuess.tr.x + trX*scalor;
-    }
-    else if(maxError == Math.abs(trY)){
-        //console.log("Move trY by: " + trY/divisor);
-        lastGuess.tr.y = lastGuess.tr.y + trY*scalor;
-    }
-    else if(maxError == Math.abs(brX)){
-        //console.log("Move brX by: " + brX/divisor);
-        lastGuess.br.x = lastGuess.br.x + brX*scalor;
-    }
+    //Move ALL corners proportionally to their errors (parallel optimization)
+    //This is much faster than moving only the worst corner
+    var scalor = -1 * stepSize;
+    
+    //Always move all corners, but scale by their relative error
+    lastGuess.tl.x = lastGuess.tl.x + tlX*scalor;
+    lastGuess.tl.y = lastGuess.tl.y + tlY*scalor;
+    lastGuess.tr.x = lastGuess.tr.x + trX*scalor;
+    lastGuess.tr.y = lastGuess.tr.y + trY*scalor;
+    lastGuess.br.x = lastGuess.br.x + brX*scalor;
     
     return lastGuess;
 }
@@ -360,9 +362,10 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
  * Computes the fitness of a guess for a set of measurements by comparing the guess to magnetically attracted lines.
  * @param {Array} measurements - An array of measurements to compare the guess to.
  * @param {Object} lastGuess - The last guess made by the algorithm.
+ * @param {number} stepSize - Multiplier for the correction step (default 1.0 for full correction).
  * @returns {Object} - An object containing the fitness of the guess and the lines used to calculate the fitness.
  */
-function computeLinesFitness(measurements, lastGuess){
+function computeLinesFitness(measurements, lastGuess, stepSize = 1.0){
     var fitnesses = [];
     var allLines = [];
     
@@ -377,7 +380,7 @@ function computeLinesFitness(measurements, lastGuess){
     const fitness = calculateAverage(fitnesses);
 
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
-    lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
+    lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess, stepSize);
     lastGuess.fitness = fitness;
 
     return lastGuess;
@@ -655,25 +658,44 @@ function findMaxFitness(initialGuess, measurements) {
     let stagnantCounter = 0;
     let totalCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
+    let stepSize = 1.0;  // Start with full correction
+    let previousFitness = 0;
 
     function iterate() {
-        if (stagnantCounter < 100 && totalCounter < 200000) {
+        if (stagnantCounter < 150 && totalCounter < 200000) {
             //Clear the canvass
             clearCanvas();
 
-            currentGuess = computeLinesFitness(measurements, currentGuess);
+            currentGuess = computeLinesFitness(measurements, currentGuess, stepSize);
             
-            if (1/currentGuess.fitness > 1/bestGuess.fitness) {
+            const currentFitnessValue = 1/currentGuess.fitness;
+            const bestFitnessValue = 1/bestGuess.fitness;
+            
+            if (currentFitnessValue > bestFitnessValue) {
+                const improvement = currentFitnessValue - bestFitnessValue;
                 bestGuess = JSON.parse(JSON.stringify(currentGuess));
                 stagnantCounter = 0;
+                
+                // Adaptive step sizing: if we're improving well, keep step size
+                // If improvement is slowing, reduce step size for fine-tuning
+                if (improvement < 0.001 && stepSize > 0.3) {
+                    stepSize *= 0.95;  // Gradually reduce step size as we converge
+                } else if (improvement > 0.01) {
+                    stepSize = Math.min(1.0, stepSize * 1.05);  // Increase if making good progress
+                }
             } else {
                 stagnantCounter++;
+                // If stagnating, reduce step size to search more carefully
+                if (stagnantCounter > 10 && stepSize > 0.1) {
+                    stepSize *= 0.9;
+                    stagnantCounter = 0;  // Reset counter after adjusting step size
+                }
             }
             totalCounter++;
             console.log("Total Counter: " + totalCounter);
 
             if(totalCounter % 100 == 0){
-                document.getElementById('output').value = "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + "\n";
+                document.getElementById('output').value = "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + " (step: " + stepSize.toFixed(3) + ")\n";
             }
 
             // Schedule the next iteration
