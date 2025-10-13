@@ -37,6 +37,13 @@
 
 <script>
 
+// Z-heights for belt anchor points (used in projection calculations)
+var tlZ = 100
+var trZ = 56
+var blZ = 34
+var brZ = 78
+var acceptableCalibrationThreshold = 0.5
+
 //This is the inital guess for how big the machine is. These numbers are wrong intensionally
 const initialWidth = 3048 + 12;
 const initialHeight = 2200 - 14;
@@ -194,7 +201,13 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
     brLine = lines[3];
   }
 
-  return { tlLine, trLine, blLine, brLine };
+  const result = { tlLine, trLine, blLine, brLine, changeMade };
+
+  sendCalibrationEvent({
+    walkedlines: result,
+  });
+
+  return result;
 }
 
 /**
@@ -206,16 +219,16 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
 function magneticallyAttractedLinesFitness(measurement, individual){
 
     //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
-    if(measurement.tlTheta == undefined){
+    if(typeof measurement.tlTheta === 'undefined'){
         measurement.tlTheta = -.3;
     }
-    if(measurement.trTheta == undefined){
+    if(typeof measurement.trTheta === 'undefined'){
         measurement.trTheta = 3.5;
     }
-    if(measurement.blTheta == undefined){
+    if(typeof measurement.blTheta === 'undefined'){
         measurement.blTheta = .5;
     }
-    if(measurement.brTheta == undefined){
+    if(typeof measurement.brTheta === 'undefined'){
         measurement.brTheta = 2.6;
     }
 
@@ -249,6 +262,11 @@ function magneticallyAttractedLinesFitness(measurement, individual){
     measurement.TRtension = TR;
 
     drawLines(tlLine, trLine, blLine, brLine, individual);
+
+    sendCalibrationEvent({
+      finalFitness,
+      tensions: { TL, TR }
+    });
 
     return {fitness: finalFitness, lines: {tlLine: tlLine, trLine: trLine, blLine: blLine, brLine: brLine}};
 }
@@ -557,11 +575,6 @@ function printResults(guess){
  * @returns {Object} - An object containing the projected measurements
  */
 function projectMeasurement(measurement){
-    const tlZ = 116;
-    const trZ = 69;
-    const blZ = 47;
-    const brZ = 89;
-
     const tl = Math.sqrt(Math.pow(measurement.tl,2) - Math.pow(tlZ,2));
     const tr = Math.sqrt(Math.pow(measurement.tr,2) - Math.pow(trZ,2));
     const bl = Math.sqrt(Math.pow(measurement.bl,2) - Math.pow(blZ,2));
@@ -651,6 +664,10 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
 }
 
 function findMaxFitness(initialGuess, measurements) {
+    sendCalibrationEvent({
+      initialGuess
+    }, true);
+
     let currentGuess = JSON.parse(JSON.stringify(initialGuess));
     let stagnantCounter = 0;
     let totalCounter = 0;
@@ -670,6 +687,14 @@ function findMaxFitness(initialGuess, measurements) {
                 stagnantCounter++;
             }
             totalCounter++;
+            
+            sendCalibrationEvent({
+              final: false,
+              guess: currentGuess,
+              bestGuess: bestGuess,
+              totalCounter
+            });
+
             console.log("Total Counter: " + totalCounter);
 
             if(totalCounter % 100 == 0){
@@ -682,7 +707,7 @@ function findMaxFitness(initialGuess, measurements) {
         else{
             messagesBox = document.getElementById('output');
 
-            if(1/bestGuess.fitness < 0.5){
+            if(1/bestGuess.fitness < acceptableCalibrationThreshold){
                 messagesBox.value += '\nWARNING FITNESS TOO LOW. DO NOT USE THESE CALIBRATION VALUES!';
             }
 
@@ -699,7 +724,7 @@ function findMaxFitness(initialGuess, measurements) {
             messagesBox.scrollTop
             messagesBox.scrollTop = messagesBox.scrollHeight;
 
-            if(1/bestGuess.fitness > 0.5){
+            if(1/bestGuess.fitness > acceptableCalibrationThreshold){
                 // sendCommand('$/Maslow_tlX=' + bestGuess.tl.x.toFixed(1));
                 // sendCommand('$/Maslow_tlY=' + bestGuess.tl.y.toFixed(1));
                 // sendCommand('$/Maslow_trX=' + bestGuess.tr.x.toFixed(1));
@@ -728,7 +753,25 @@ function findMaxFitness(initialGuess, measurements) {
     iterate();
 }
 
-
+/**
+ * This function will allow us to hook data into events that we can just copy this file into another project
+ * to have the calibration run in other contexts and still gather events from the calculations to plot things, gather data, etc.
+ */
+function sendCalibrationEvent(dataToSend, log = false) {
+  try {
+    if (log) {
+      console.log(JSON.stringify(dataToSend, null, 2));
+    }
+    document.body.dispatchEvent(new CustomEvent(CALIBRATION_EVENT_NAME, {
+      bubbles: true,
+      cancelable: true,
+      detail: dataToSend
+    }));
+  } catch (err) {
+    console.error('Unexpected:', err);
+  }
+}
+const CALIBRATION_EVENT_NAME = 'calibration-data';
 
 
 //Creates the canvas on which the pattern will be drawn
