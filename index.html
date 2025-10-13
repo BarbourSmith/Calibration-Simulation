@@ -655,6 +655,54 @@ function findMaxFitness(initialGuess, measurements) {
     let stagnantCounter = 0;
     let totalCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
+    let aggressivePhaseComplete = false;
+    let aggressiveCounter = 0;
+
+    // Calculate initial fitness
+    bestGuess = computeLinesFitness(measurements, bestGuess);
+    currentGuess = JSON.parse(JSON.stringify(bestGuess));
+
+    function aggressiveExplore() {
+        if (aggressiveCounter < 500) {
+            clearCanvas();
+
+            // Create a new guess with aggressive random jumps
+            let testGuess = JSON.parse(JSON.stringify(bestGuess));
+            testGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
+            testGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
+            testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
+            testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
+            testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
+            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
+            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
+            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
+
+            testGuess = computeLinesFitness(measurements, testGuess);
+
+            // Keep the better guess
+            if (1/testGuess.fitness > 1/bestGuess.fitness) {
+                bestGuess = JSON.parse(JSON.stringify(testGuess));
+                console.log("Aggressive phase found better fitness: " + (1/bestGuess.fitness).toFixed(7));
+            }
+
+            aggressiveCounter++;
+            if(aggressiveCounter % 100 == 0){
+                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+            }
+
+            // Schedule the next aggressive iteration
+            setTimeout(aggressiveExplore, 0);
+        }
+        else {
+            // Aggressive phase complete, update current guess and start normal optimization
+            aggressivePhaseComplete = true;
+            currentGuess = JSON.parse(JSON.stringify(bestGuess));
+            console.log("Aggressive phase complete. Starting normal optimization with fitness: " + (1/bestGuess.fitness).toFixed(7));
+            document.getElementById('output').value = "Aggressive phase complete. Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+            // Start normal iteration
+            setTimeout(iterate, 0);
+        }
+    }
 
     function iterate() {
         if (stagnantCounter < 100 && totalCounter < 200000) {
@@ -724,8 +772,15 @@ function findMaxFitness(initialGuess, measurements) {
         }
     }
 
-    // Start the iteration
-    iterate();
+    // Check if we need aggressive exploration phase
+    if (1/bestGuess.fitness < 0.1) {
+        console.log("Initial fitness too low (" + (1/bestGuess.fitness).toFixed(7) + "). Starting aggressive exploration phase...");
+        document.getElementById('output').value = "Initial fitness too low (" + (1/bestGuess.fitness).toFixed(7) + "). Starting aggressive exploration...\n";
+        aggressiveExplore();
+    } else {
+        // Start the normal iteration
+        iterate();
+    }
 }
 
 
@@ -761,6 +816,45 @@ computeButton.addEventListener('click', () => {
 //Create the buttons that the user can click
 const compute1kButton = document.getElementById('compute-1k-button');
 compute1kButton.addEventListener('click', () => {
+    // Calculate initial fitness
+    initialGuess = computeLinesFitness(measurements, initialGuess);
+    
+    // Check if we need aggressive exploration phase
+    if (1/initialGuess.fitness < 0.1) {
+        console.log("Initial fitness too low (" + (1/initialGuess.fitness).toFixed(7) + "). Running 500 aggressive exploration iterations...");
+        document.getElementById('output').value = "Initial fitness too low (" + (1/initialGuess.fitness).toFixed(7) + "). Running aggressive exploration...\n";
+        
+        // Aggressive exploration phase - 500 iterations with large jumps
+        let bestGuess = JSON.parse(JSON.stringify(initialGuess));
+        for(let i = 0; i < 500; i++){
+            clearCanvas();
+            let testGuess = JSON.parse(JSON.stringify(bestGuess));
+            testGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
+            testGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
+            testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
+            testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
+            testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
+            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
+            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
+            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
+            
+            testGuess = computeLinesFitness(measurements, testGuess);
+            
+            if (1/testGuess.fitness > 1/bestGuess.fitness) {
+                bestGuess = JSON.parse(JSON.stringify(testGuess));
+                console.log("Aggressive phase found better fitness: " + (1/bestGuess.fitness).toFixed(7));
+            }
+            
+            if((i+1) % 100 == 0){
+                document.getElementById('output').value = "Aggressive exploration: " + (i+1) + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+            }
+        }
+        initialGuess = JSON.parse(JSON.stringify(bestGuess));
+        console.log("Aggressive phase complete. Starting normal optimization with fitness: " + (1/initialGuess.fitness).toFixed(7));
+        document.getElementById('output').value = "Aggressive phase complete. Best Fitness: " + (1/initialGuess.fitness).toFixed(7) + "\nStarting normal optimization...\n";
+    }
+    
+    // Normal optimization - 1000 iterations
     for(let i = 0; i < 1000; i++){
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
@@ -771,19 +865,77 @@ compute1kButton.addEventListener('click', () => {
 
 const compute10kButton = document.getElementById('compute-10k-button');
 compute10kButton.addEventListener('click', () => {
-    let i = 0;
-    function loop() {
-        clearCanvas();
-        initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
-        i++;
-        if (i < 10000) {
-            requestAnimationFrame(loop);
-        } else {
-            printResults(initialGuess);
+    // Calculate initial fitness
+    initialGuess = computeLinesFitness(measurements, initialGuess);
+    let aggressivePhaseDone = false;
+    
+    // Check if we need aggressive exploration phase
+    if (1/initialGuess.fitness < 0.1) {
+        console.log("Initial fitness too low (" + (1/initialGuess.fitness).toFixed(7) + "). Running 500 aggressive exploration iterations...");
+        document.getElementById('output').value = "Initial fitness too low (" + (1/initialGuess.fitness).toFixed(7) + "). Running aggressive exploration...\n";
+        
+        // Aggressive exploration phase - 500 iterations with large jumps
+        let bestGuess = JSON.parse(JSON.stringify(initialGuess));
+        let aggressiveCounter = 0;
+        
+        function aggressiveLoop() {
+            clearCanvas();
+            let testGuess = JSON.parse(JSON.stringify(bestGuess));
+            testGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
+            testGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
+            testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
+            testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
+            testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
+            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
+            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
+            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
+            
+            testGuess = computeLinesFitness(measurements, testGuess);
+            
+            if (1/testGuess.fitness > 1/bestGuess.fitness) {
+                bestGuess = JSON.parse(JSON.stringify(testGuess));
+                console.log("Aggressive phase found better fitness: " + (1/bestGuess.fitness).toFixed(7));
+            }
+            
+            aggressiveCounter++;
+            if(aggressiveCounter % 100 == 0){
+                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+            }
+            
+            if (aggressiveCounter < 500) {
+                requestAnimationFrame(aggressiveLoop);
+            } else {
+                initialGuess = JSON.parse(JSON.stringify(bestGuess));
+                console.log("Aggressive phase complete. Starting normal optimization with fitness: " + (1/initialGuess.fitness).toFixed(7));
+                document.getElementById('output').value = "Aggressive phase complete. Best Fitness: " + (1/initialGuess.fitness).toFixed(7) + "\nStarting normal optimization...\n";
+                aggressivePhaseDone = true;
+                // Start normal optimization
+                normalLoop();
+            }
         }
+        
+        aggressiveLoop();
+    } else {
+        aggressivePhaseDone = true;
+        normalLoop();
     }
-    loop();
+    
+    // Normal optimization - 10000 iterations
+    function normalLoop() {
+        let i = 0;
+        function loop() {
+            clearCanvas();
+            initialGuess = computeLinesFitness(measurements, initialGuess);
+            console.log("Fitness: " + 1/initialGuess.fitness);
+            i++;
+            if (i < 10000) {
+                requestAnimationFrame(loop);
+            } else {
+                printResults(initialGuess);
+            }
+        }
+        loop();
+    }
 });
 
 
