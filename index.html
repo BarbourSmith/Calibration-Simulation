@@ -703,6 +703,9 @@ async function findBestRectangularStart(measurements) {
             
             const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
+            // Log each test result
+            console.log(`  Testing ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}`);
+            
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
                 bestGuess = JSON.parse(JSON.stringify(result));
@@ -738,6 +741,9 @@ async function findBestRectangularStart(measurements) {
             };
             
             const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
+            
+            // Log each test result
+            console.log(`  Testing ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}`);
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
