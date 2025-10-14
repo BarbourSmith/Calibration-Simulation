@@ -679,6 +679,9 @@ async function findBestRectangularStart(measurements) {
     const messagesBox = document.getElementById('output');
     messagesBox.value = "Searching for best starting configuration...\n";
     
+    // Deep copy measurements to avoid mutation during search
+    const measurementsCopy = JSON.parse(JSON.stringify(measurements));
+    
     let bestGuess = null;
     let bestFitness = Infinity; // Lower is better
     
@@ -688,6 +691,8 @@ async function findBestRectangularStart(measurements) {
     
     for (let width = 100; width <= 5000; width += 500) {
         for (let height = 100; height <= 5000; height += 500) {
+            // Make fresh copy for each test
+            const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
                 tl: {x: 0, y: height},
                 tr: {x: width, y: height},
@@ -696,7 +701,7 @@ async function findBestRectangularStart(measurements) {
                 fitness: 0
             };
             
-            const result = computeLinesFitness(measurements, guess, true); // Skip drawing for speed
+            const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -722,6 +727,8 @@ async function findBestRectangularStart(measurements) {
     
     for (let width = Math.max(100, bestWidth - searchRadius); width <= Math.min(5000, bestWidth + searchRadius); width += 100) {
         for (let height = Math.max(100, bestHeight - searchRadius); height <= Math.min(5000, bestHeight + searchRadius); height += 100) {
+            // Make fresh copy for each test
+            const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
                 tl: {x: 0, y: height},
                 tr: {x: width, y: height},
@@ -730,7 +737,7 @@ async function findBestRectangularStart(measurements) {
                 fitness: 0
             };
             
-            const result = computeLinesFitness(measurements, guess, true); // Skip drawing for speed
+            const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
