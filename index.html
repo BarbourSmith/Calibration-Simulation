@@ -44,6 +44,10 @@ var blZ = 34
 var brZ = 78
 var acceptableCalibrationThreshold = 0.5
 
+// Search configuration parameters for findBestRectangularStart
+const defaultCoarseStepSize = 300;  // Default step size for initial coarse search (mm)
+const defaultFineStepSize = 100;    // Default step size for fine search around best result (mm)
+
 //This is the inital guess for how big the machine is. These numbers are wrong intensionally
 const initialWidth = 3048 + 12;
 const initialHeight = 2200 - 14;
@@ -669,12 +673,14 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
 
 /**
  * Searches for the best rectangular starting configuration by testing all combinations
- * of width and height in 100mm increments up to 5000mm.
+ * of width and height with configurable increments up to 5000mm.
  * Assumes bl=(0,0), br.y=0, and rectangular frame (tl.x=0, tl.y=tr.y, br.x=tr.x)
  * @param {Array} measurements - Array of measurement objects
+ * @param {number} coarseStepSize - Step size in mm for coarse search (default: 500)
+ * @param {number} fineStepSize - Step size in mm for fine search (default: 100)
  * @returns {Promise<Object>} - Promise that resolves to best guess configuration with highest fitness
  */
-async function findBestRectangularStart(measurements) {
+async function findBestRectangularStart(measurements, coarseStepSize = defaultCoarseStepSize, fineStepSize = defaultFineStepSize) {
     console.log("Searching for best rectangular starting configuration...");
     const messagesBox = document.getElementById('output');
     messagesBox.value = "Searching for best starting configuration...\n";
@@ -685,12 +691,12 @@ async function findBestRectangularStart(measurements) {
     let bestGuess = null;
     let bestFitness = Infinity; // Lower is better
     
-    // Phase 1: Coarse search - test every 500mm from 100 to 5000
-    console.log("Phase 1: Coarse search (500mm increments)...");
-    messagesBox.value += "Phase 1: Coarse search (500mm increments)...\n";
+    // Phase 1: Coarse search - test with configurable step size
+    console.log(`Phase 1: Coarse search (${coarseStepSize}mm increments)...`);
+    messagesBox.value += `Phase 1: Coarse search (${coarseStepSize}mm increments)...\n`;
     
-    for (let width = 100; width <= 5000; width += 500) {
-        for (let height = 100; height <= 5000; height += 500) {
+    for (let width = 100; width <= 5000; width += coarseStepSize) {
+        for (let height = 100; height <= 5000; height += coarseStepSize) {
             // Make fresh copy for each test
             const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
@@ -713,8 +719,8 @@ async function findBestRectangularStart(measurements) {
                 bestGuess = JSON.parse(JSON.stringify(result));
             }
         }
-        // Yield occasionally
-        if (width % 1000 === 0) {
+        // Yield occasionally to prevent UI blocking
+        if (width % (coarseStepSize * 2) === 0) {
             await new Promise(resolve => setTimeout(resolve, 0));
         }
     }
@@ -723,16 +729,16 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `\nPhase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}\n\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
-    // Phase 2: Fine search - test every 100mm around the best from phase 1
-    console.log("Phase 2: Fine search (100mm increments around best)...");
-    messagesBox.value += "Phase 2: Fine search (100mm increments)...\n";
+    // Phase 2: Fine search - test with configurable fine step size around the best from phase 1
+    console.log(`Phase 2: Fine search (${fineStepSize}mm increments around best)...`);
+    messagesBox.value += `Phase 2: Fine search (${fineStepSize}mm increments)...\n`;
     
     const bestWidth = bestGuess.tr.x;
     const bestHeight = bestGuess.tr.y;
-    const searchRadius = 500; // Search +/- 500mm around best
+    const searchRadius = Math.max(500, coarseStepSize * 2); // Search radius based on coarse step size
     
-    for (let width = Math.max(100, bestWidth - searchRadius); width <= Math.min(5000, bestWidth + searchRadius); width += 100) {
-        for (let height = Math.max(100, bestHeight - searchRadius); height <= Math.min(5000, bestHeight + searchRadius); height += 100) {
+    for (let width = Math.max(100, bestWidth - searchRadius); width <= Math.min(5000, bestWidth + searchRadius); width += fineStepSize) {
+        for (let height = Math.max(100, bestHeight - searchRadius); height <= Math.min(5000, bestHeight + searchRadius); height += fineStepSize) {
             // Make fresh copy for each test
             const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
@@ -938,7 +944,7 @@ compute10kButton.addEventListener('click', () => {
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', async () => {
     // First find the best rectangular starting configuration
-    var bestRectangularStart = await findBestRectangularStart(measurements);
+    var bestRectangularStart = await findBestRectangularStart(measurements, defaultCoarseStepSize, defaultFineStepSize);
     
     // Use the best rectangular configuration as the starting point for full optimization
     var result = findMaxFitness(bestRectangularStart, measurements);
@@ -959,7 +965,7 @@ computeEndButton.addEventListener('click', async () => {
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
     // Find the best rectangular starting configuration once
-    var bestRectangularStart = await findBestRectangularStart(measurements);
+    var bestRectangularStart = await findBestRectangularStart(measurements, defaultCoarseStepSize, defaultFineStepSize);
     console.log("Using best rectangular start for convergence iterations");
 
     function computeGuess() {
