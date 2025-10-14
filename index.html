@@ -676,7 +676,7 @@ async function findBestRectangularStart(measurements) {
     const messagesBox = document.getElementById('output');
     messagesBox.value = "Searching for best starting configuration...\n";
     messagesBox.value += "Testing entire space with 100mm increments (100-5000mm)...\n";
-    messagesBox.value += "This will take 2-3 minutes. Please wait...\n";
+    messagesBox.value += "Displaying results as they are computed...\n\n";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
@@ -687,6 +687,8 @@ async function findBestRectangularStart(measurements) {
     const totalTests = 50 * 50; // 2500 combinations
     
     // Search entire space with 100mm increments
+    let resultsBuffer = "";
+    const batchSize = 50; // Update UI every 50 tests (each width column)
     
     for (let width = 100; width <= 5000; width += 100) {
         for (let height = 100; height <= 5000; height += 100) {
@@ -704,21 +706,22 @@ async function findBestRectangularStart(measurements) {
             
             testedCount++;
             
+            // Add result to buffer
+            resultsBuffer += `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
+            
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
                 bestGuess = JSON.parse(JSON.stringify(result));
             }
         }
         
-        // Update progress display every 250 tests (every 5 widths)
-        if (testedCount % 250 === 0) {
-            const progress = ((testedCount / totalTests) * 100).toFixed(1);
-            messagesBox.value += `Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}\n`;
-            messagesBox.scrollTop = messagesBox.scrollHeight;
-        }
+        // Display results after each width column (50 tests) and yield to browser
+        messagesBox.value += resultsBuffer;
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        resultsBuffer = "";
         
-        // Yield to browser after each width column (every 50 tests) with a small delay
-        await new Promise(resolve => setTimeout(resolve, 1));
+        // Yield to browser with a small delay to keep UI responsive
+        await new Promise(resolve => setTimeout(resolve, 10));
     }
     
     messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
