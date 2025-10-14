@@ -687,7 +687,7 @@ async function findBestRectangularStart(measurements) {
     
     // Phase 1: Coarse search - test every 500mm from 100 to 5000
     console.log("Phase 1: Coarse search (500mm increments)...");
-    messagesBox.value += "Phase 1: Coarse search...\n";
+    messagesBox.value += "Phase 1: Coarse search (500mm increments)...\n";
     
     for (let width = 100; width <= 5000; width += 500) {
         for (let height = 100; height <= 5000; height += 500) {
@@ -703,8 +703,10 @@ async function findBestRectangularStart(measurements) {
             
             const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
-            // Log each test result
-            console.log(`  Testing ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}`);
+            // Display each test result in UI
+            const testResult = `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
+            messagesBox.value += testResult;
+            messagesBox.scrollTop = messagesBox.scrollHeight;
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -718,11 +720,12 @@ async function findBestRectangularStart(measurements) {
     }
     
     console.log(`Phase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
-    messagesBox.value += `Phase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm\n`;
+    messagesBox.value += `\nPhase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}\n\n`;
+    messagesBox.scrollTop = messagesBox.scrollHeight;
     
     // Phase 2: Fine search - test every 100mm around the best from phase 1
     console.log("Phase 2: Fine search (100mm increments around best)...");
-    messagesBox.value += "Phase 2: Refining...\n";
+    messagesBox.value += "Phase 2: Fine search (100mm increments)...\n";
     
     const bestWidth = bestGuess.tr.x;
     const bestHeight = bestGuess.tr.y;
@@ -742,8 +745,10 @@ async function findBestRectangularStart(measurements) {
             
             const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
-            // Log each test result
-            console.log(`  Testing ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}`);
+            // Display each test result in UI
+            const testResult = `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
+            messagesBox.value += testResult;
+            messagesBox.scrollTop = messagesBox.scrollHeight;
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -754,7 +759,8 @@ async function findBestRectangularStart(measurements) {
     }
     
     console.log(`Search complete! Best rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
-    messagesBox.value = `✓ Search complete!\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    messagesBox.value += `\n✓ Search complete!\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
 }
@@ -794,7 +800,10 @@ function findMaxFitness(initialGuess, measurements) {
             console.log("Total Counter: " + totalCounter);
 
             if(totalCounter % 100 == 0){
-                document.getElementById('output').value = "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + "\n";
+                const output = document.getElementById('output');
+                // Append update instead of replacing
+                output.value += "Optimization progress: Best fitness " + (1/bestGuess.fitness).toFixed(7) + " after " + totalCounter + " iterations\n";
+                output.scrollTop = output.scrollHeight;
             }
 
             // Schedule the next iteration
