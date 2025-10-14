@@ -703,7 +703,7 @@ function findMaxFitness(initialGuess, measurements) {
 
             aggressiveCounter++;
             if(aggressiveCounter % 100 == 0){
-                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/3500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
             }
 
             // Schedule the next aggressive iteration
@@ -935,10 +935,10 @@ compute10kButton.addEventListener('click', () => {
             
             aggressiveCounter++;
             if(aggressiveCounter % 100 == 0){
-                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+                document.getElementById('output').value = "Aggressive exploration: " + aggressiveCounter + "/3500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
             }
-            
-            if (aggressiveCounter < 500) {
+
+            if (aggressiveCounter < 3500) {
                 requestAnimationFrame(aggressiveLoop);
             } else {
                 initialGuess = JSON.parse(JSON.stringify(bestGuess));
