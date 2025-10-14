@@ -725,62 +725,111 @@ async function findBestRectangularStart(measurements) {
     canvas.style.display = 'block';
     
     messagesBox.value = "Searching for best starting configuration...\n";
-    searchStatus.textContent = "Initializing 3D visualization...";
+    messagesBox.value += "Phase 1: Finding optimal radius along diagonal...\n";
+    searchStatus.textContent = "Phase 1: Scanning diagonal to find optimal radius...";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    let bestGuess = null;
-    let bestFitness = Infinity; // Lower is better
-    let testedCount = 0;
-    const totalTests = 50 * 50; // 2500 combinations
+    // PHASE 1: Search along diagonal to find optimal radius
+    let diagonalBestFitness = Infinity;
+    let diagonalBestSize = 0;
+    let diagonalResults = [];
     
-    // Store all test results for 3D visualization
+    for (let size = 100; size <= 5000; size += 100) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        const fitnessValue = 1 / result.fitness;
+        diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
+        
+        if (result.fitness < diagonalBestFitness) {
+            diagonalBestFitness = result.fitness;
+            diagonalBestSize = size;
+        }
+        
+        // Update progress
+        if (size % 500 === 0) {
+            searchStatus.textContent = `Phase 1: Testing ${size}mm diagonal - Best so far: ${diagonalBestSize}mm`;
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    }
+    
+    // Calculate optimal radius (distance from origin to diagonal point)
+    const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
+    const radiusMargin = 300; // ±300mm band around the circle
+    
+    messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
+    messagesBox.value += `Phase 2: Testing points within ±${radiusMargin}mm of radius circle...\n`;
+    searchStatus.textContent = `Phase 2: Testing circular band (radius ${optimalRadius.toFixed(0)}mm ±${radiusMargin}mm)...`;
+    
+    // PHASE 2: Search only points within ±300mm of the optimal radius circle
+    let bestGuess = null;
+    let bestFitness = Infinity;
+    let testedCount = 0;
+    
+    // Initialize full grid data structure for visualization
     const fitnessData = [];
     const widthValues = [];
     const heightValues = [];
     
-    // Search entire space with 100mm increments
-    searchStatus.textContent = "Testing configurations...";
-    
+    // Pre-populate grid with zeros
     for (let width = 100; width <= 5000; width += 100) {
-        const widthIndex = widthValues.length;
         widthValues.push(width);
-        fitnessData[widthIndex] = [];
+    }
+    for (let height = 100; height <= 5000; height += 100) {
+        heightValues.push(height);
+    }
+    for (let i = 0; i < widthValues.length; i++) {
+        fitnessData[i] = new Array(heightValues.length).fill(0);
+    }
+    
+    // Test only points within the circular band
+    for (let widthIdx = 0; widthIdx < widthValues.length; widthIdx++) {
+        const width = widthValues[widthIdx];
         
-        for (let height = 100; height <= 5000; height += 100) {
-            if (widthIndex === 0) {
-                heightValues.push(height);
+        for (let heightIdx = 0; heightIdx < heightValues.length; heightIdx++) {
+            const height = heightValues[heightIdx];
+            
+            // Calculate distance from origin (0,0) to this rectangular frame point
+            const radius = Math.sqrt(width * width + height * height);
+            
+            // Only test if within ±300mm of optimal radius
+            if (Math.abs(radius - optimalRadius) <= radiusMargin) {
+                const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+                const guess = {
+                    tl: {x: 0, y: height},
+                    tr: {x: width, y: height},
+                    bl: {x: 0, y: 0},
+                    br: {x: width, y: 0},
+                    fitness: 0
+                };
+                
+                const result = computeLinesFitness(testMeasurements, guess, true);
+                const fitnessValue = 1 / result.fitness;
+                fitnessData[widthIdx][heightIdx] = fitnessValue;
+                
+                testedCount++;
+                
+                if (result.fitness < bestFitness) {
+                    bestFitness = result.fitness;
+                    bestGuess = JSON.parse(JSON.stringify(result));
+                }
             }
-            
-            // Make fresh copy for each test
-            const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-            const guess = {
-                tl: {x: 0, y: height},
-                tr: {x: width, y: height},
-                bl: {x: 0, y: 0},
-                br: {x: width, y: 0},
-                fitness: 0
-            };
-            
-            const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
-            
-            testedCount++;
-            
-            // Store fitness value (use 1/fitness for better visualization - higher is better)
-            const fitnessValue = 1 / result.fitness;
-            fitnessData[widthIndex].push(fitnessValue);
-            
-            if (result.fitness < bestFitness) {
-                bestFitness = result.fitness;
-                bestGuess = JSON.parse(JSON.stringify(result));
-            }
+            // else: fitnessData remains 0 for points outside the band
         }
         
         // Update progress and render incrementally
-        if (testedCount % 250 === 0) {
-            const progress = ((testedCount / totalTests) * 100).toFixed(1);
-            searchStatus.textContent = `Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+        if (widthIdx % 5 === 0) {
+            const progress = ((widthIdx / widthValues.length) * 100).toFixed(1);
+            searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
             
             // Render current data
             render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
@@ -799,8 +848,8 @@ async function findBestRectangularStart(measurements) {
     // Setup controls
     setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} configurations. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} configurations (vs 2500 full search). Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations in circular band (reduced from 2500).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
