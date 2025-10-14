@@ -668,14 +668,17 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
  * of width and height in 100mm increments up to 5000mm.
  * Assumes bl=(0,0), br.y=0, and rectangular frame (tl.x=0, tl.y=tr.y, br.x=tr.x)
  * @param {Array} measurements - Array of measurement objects
- * @returns {Object} - Best guess configuration with highest fitness
+ * @returns {Promise<Object>} - Promise that resolves to best guess configuration with highest fitness
  */
-function findBestRectangularStart(measurements) {
+async function findBestRectangularStart(measurements) {
     console.log("Searching for best rectangular starting configuration...");
+    const messagesBox = document.getElementById('output');
+    messagesBox.value = "Searching for best starting configuration...\n";
     
     let bestGuess = null;
     let bestFitness = Infinity; // Lower is better
     let testedCount = 0;
+    const totalTests = 50 * 50; // 2500 combinations
     
     // Test all rectangular configurations in 100mm increments
     for (let width = 100; width <= 5000; width += 100) {
@@ -704,9 +707,14 @@ function findBestRectangularStart(measurements) {
                 bestFitness = result.fitness;
                 bestGuess = JSON.parse(JSON.stringify(result));
                 
-                // Log progress every 500 tests
-                if (testedCount % 500 === 0) {
-                    console.log(`Tested ${testedCount}/2500: Best so far - ${width}x${height}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
+                // Log progress every 250 tests
+                if (testedCount % 250 === 0) {
+                    const progress = ((testedCount / totalTests) * 100).toFixed(1);
+                    console.log(`Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
+                    messagesBox.value = `Searching: ${progress}% complete\nBest so far: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}\n`;
+                    
+                    // Yield to browser to keep UI responsive
+                    await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
         }
@@ -714,6 +722,7 @@ function findBestRectangularStart(measurements) {
     
     console.log(`Search complete! Tested ${testedCount} configurations.`);
     console.log(`Best rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
+    messagesBox.value += `\n✓ Search complete!\nBest rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm\nFitness: ${(1/bestGuess.fitness).toFixed(4)}\n`;
     
     return bestGuess;
 }
@@ -886,9 +895,9 @@ compute10kButton.addEventListener('click', () => {
 
 
 const computeEndButton = document.getElementById('compute-end-button');
-computeEndButton.addEventListener('click', () => {
+computeEndButton.addEventListener('click', async () => {
     // First find the best rectangular starting configuration
-    var bestRectangularStart = findBestRectangularStart(measurements);
+    var bestRectangularStart = await findBestRectangularStart(measurements);
     
     // Use the best rectangular configuration as the starting point for full optimization
     var result = findMaxFitness(bestRectangularStart, measurements);
@@ -907,9 +916,9 @@ computeEndButton.addEventListener('click', () => {
 //     fitness: 0
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
-computeConvergeButton.addEventListener('click', () => {
+computeConvergeButton.addEventListener('click', async () => {
     // Find the best rectangular starting configuration once
-    var bestRectangularStart = findBestRectangularStart(measurements);
+    var bestRectangularStart = await findBestRectangularStart(measurements);
     console.log("Using best rectangular start for convergence iterations");
 
     function computeGuess() {
