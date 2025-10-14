@@ -12,6 +12,25 @@
         body {
             margin: 0;
         }
+        #surface-map-canvas {
+            border: 1px solid #333;
+            margin: 10px 0;
+            cursor: move;
+        }
+        #search-info {
+            margin: 10px 0;
+            font-family: monospace;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        .controls button {
+            margin: 0 5px;
+            padding: 5px 10px;
+        }
     </style>
     
 </head>
@@ -27,6 +46,20 @@
 </div>
 
 <div id = "views"></div>
+<div id="search-info" style="display:none;">
+    <h3>Search Space Visualization - Interactive 3D Surface Map</h3>
+    <div class="controls">
+        <button id="rotate-left">← Rotate Left</button>
+        <button id="rotate-right">Rotate Right →</button>
+        <button id="tilt-up">↑ Tilt Up</button>
+        <button id="tilt-down">↓ Tilt Down</button>
+        <button id="zoom-in">+ Zoom In</button>
+        <button id="zoom-out">- Zoom Out</button>
+        <button id="reset-view">Reset View</button>
+    </div>
+    <p id="search-status">Preparing search...</p>
+</div>
+<canvas id="surface-map-canvas" width="1000" height="600" style="display:none;"></canvas>
 <div>
     <textarea id="output" style="width: 1000px;" rows="16"></textarea>
 </div>
@@ -672,11 +705,27 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
  * @param {Array} measurements - Array of measurement objects
  * @returns {Promise<Object>} - Promise that resolves to best guess configuration with highest fitness
  */
+// 3D Surface Map Visualization State
+let surfaceMapState = {
+    rotationX: -30,
+    rotationY: 45,
+    zoom: 0.15,
+    offsetX: 0,
+    offsetY: 0
+};
+
 async function findBestRectangularStart(measurements) {
     const messagesBox = document.getElementById('output');
+    const searchInfo = document.getElementById('search-info');
+    const canvas = document.getElementById('surface-map-canvas');
+    const searchStatus = document.getElementById('search-status');
+    
+    // Show 3D visualization elements
+    searchInfo.style.display = 'block';
+    canvas.style.display = 'block';
+    
     messagesBox.value = "Searching for best starting configuration...\n";
-    messagesBox.value += "Testing entire space with 100mm increments (100-5000mm)...\n";
-    messagesBox.value += "Displaying results as they are computed...\n\n";
+    searchStatus.textContent = "Initializing 3D visualization...";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
@@ -686,12 +735,24 @@ async function findBestRectangularStart(measurements) {
     let testedCount = 0;
     const totalTests = 50 * 50; // 2500 combinations
     
+    // Store all test results for 3D visualization
+    const fitnessData = [];
+    const widthValues = [];
+    const heightValues = [];
+    
     // Search entire space with 100mm increments
-    let resultsBuffer = "";
-    const batchSize = 50; // Update UI every 50 tests (each width column)
+    searchStatus.textContent = "Testing configurations...";
     
     for (let width = 100; width <= 5000; width += 100) {
+        const widthIndex = widthValues.length;
+        widthValues.push(width);
+        fitnessData[widthIndex] = [];
+        
         for (let height = 100; height <= 5000; height += 100) {
+            if (widthIndex === 0) {
+                heightValues.push(height);
+            }
+            
             // Make fresh copy for each test
             const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
@@ -706,8 +767,9 @@ async function findBestRectangularStart(measurements) {
             
             testedCount++;
             
-            // Add result to buffer
-            resultsBuffer += `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
+            // Store fitness value (use 1/fitness for better visualization - higher is better)
+            const fitnessValue = 1 / result.fitness;
+            fitnessData[widthIndex].push(fitnessValue);
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -715,19 +777,241 @@ async function findBestRectangularStart(measurements) {
             }
         }
         
-        // Display results after each width column (50 tests) and yield to browser
-        messagesBox.value += resultsBuffer;
-        messagesBox.scrollTop = messagesBox.scrollHeight;
-        resultsBuffer = "";
-        
-        // Yield to browser with a small delay to keep UI responsive
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Update progress and render incrementally
+        if (testedCount % 250 === 0) {
+            const progress = ((testedCount / totalTests) * 100).toFixed(1);
+            searchStatus.textContent = `Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+            
+            // Render current data
+            render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+            
+            // Yield to browser
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
     }
     
+    // Final render
+    searchStatus.textContent = "Rendering final 3D surface map...";
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    
+    // Setup controls
+    setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} configurations. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
     messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
+}
+
+function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Find min and max fitness for color mapping
+    let minFitness = Infinity;
+    let maxFitness = -Infinity;
+    for (let i = 0; i < fitnessData.length; i++) {
+        for (let j = 0; j < fitnessData[i].length; j++) {
+            minFitness = Math.min(minFitness, fitnessData[i][j]);
+            maxFitness = Math.max(maxFitness, fitnessData[i][j]);
+        }
+    }
+    
+    // Project 3D points to 2D using isometric projection
+    function project3D(x, y, z) {
+        const angleX = surfaceMapState.rotationX * Math.PI / 180;
+        const angleY = surfaceMapState.rotationY * Math.PI / 180;
+        
+        // Rotate around Y axis
+        let x1 = x * Math.cos(angleY) + z * Math.sin(angleY);
+        let z1 = -x * Math.sin(angleY) + z * Math.cos(angleY);
+        let y1 = y;
+        
+        // Rotate around X axis
+        let y2 = y1 * Math.cos(angleX) - z1 * Math.sin(angleX);
+        let z2 = y1 * Math.sin(angleX) + z1 * Math.cos(angleX);
+        let x2 = x1;
+        
+        // Apply zoom and offset
+        const screenX = width / 2 + x2 * surfaceMapState.zoom + surfaceMapState.offsetX;
+        const screenY = height / 2 - y2 * surfaceMapState.zoom + surfaceMapState.offsetY;
+        
+        return { x: screenX, y: screenY, z: z2 };
+    }
+    
+    // Draw surface with faces
+    const faces = [];
+    for (let i = 0; i < widthValues.length - 1; i++) {
+        for (let j = 0; j < heightValues.length - 1; j++) {
+            const x = widthValues[i] - 2500;
+            const y = heightValues[j] - 2500;
+            const x1 = widthValues[i + 1] - 2500;
+            const y1 = heightValues[j + 1] - 2500;
+            
+            const z00 = ((fitnessData[i][j] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z10 = ((fitnessData[i + 1][j] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z01 = ((fitnessData[i][j + 1] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z11 = ((fitnessData[i + 1][j + 1] - minFitness) / (maxFitness - minFitness)) * 1000;
+            
+            const p00 = project3D(x, y, z00);
+            const p10 = project3D(x1, y, z10);
+            const p01 = project3D(x, y1, z01);
+            const p11 = project3D(x1, y1, z11);
+            
+            // Average Z for face sorting
+            const avgZ = (p00.z + p10.z + p01.z + p11.z) / 4;
+            const avgFitness = (fitnessData[i][j] + fitnessData[i + 1][j] + fitnessData[i][j + 1] + fitnessData[i + 1][j + 1]) / 4;
+            const normalized = (avgFitness - minFitness) / (maxFitness - minFitness);
+            
+            faces.push({ p00, p10, p01, p11, avgZ, normalized });
+        }
+    }
+    
+    // Sort faces by Z (painter's algorithm)
+    faces.sort((a, b) => a.avgZ - b.avgZ);
+    
+    // Draw faces
+    for (const face of faces) {
+        // Color gradient from blue (low) to red (high)
+        const hue = (1 - face.normalized) * 240; // 240 = blue, 0 = red
+        const saturation = 80;
+        const lightness = 40 + face.normalized * 30;
+        
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness - 10}%)`;
+        ctx.lineWidth = 0.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(face.p00.x, face.p00.y);
+        ctx.lineTo(face.p10.x, face.p10.y);
+        ctx.lineTo(face.p11.x, face.p11.y);
+        ctx.lineTo(face.p01.x, face.p01.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+    
+    // Mark the best point
+    if (bestGuess) {
+        const bestWidthIndex = widthValues.indexOf(bestGuess.tr.x);
+        const bestHeightIndex = heightValues.indexOf(bestGuess.tr.y);
+        if (bestWidthIndex >= 0 && bestHeightIndex >= 0) {
+            const x = bestGuess.tr.x - 2500;
+            const y = bestGuess.tr.y - 2500;
+            const z = ((fitnessData[bestWidthIndex][bestHeightIndex] - minFitness) / (maxFitness - minFitness)) * 1000 + 50;
+            const p = project3D(x, y, z);
+            
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+    
+    // Draw legend
+    ctx.fillStyle = 'black';
+    ctx.font = '12px monospace';
+    ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
+    ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 40);
+    ctx.fillText('Red Dot = Best Configuration', 10, 60);
+}
+
+function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess) {
+    document.getElementById('rotate-left').onclick = () => {
+        surfaceMapState.rotationY -= 15;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('rotate-right').onclick = () => {
+        surfaceMapState.rotationY += 15;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('tilt-up').onclick = () => {
+        surfaceMapState.rotationX -= 10;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('tilt-down').onclick = () => {
+        surfaceMapState.rotationX += 10;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('zoom-in').onclick = () => {
+        surfaceMapState.zoom *= 1.2;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('zoom-out').onclick = () => {
+        surfaceMapState.zoom /= 1.2;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('reset-view').onclick = () => {
+        surfaceMapState = {
+            rotationX: -30,
+            rotationY: 45,
+            zoom: 0.15,
+            offsetX: 0,
+            offsetY: 0
+        };
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    // Mouse drag to rotate
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    
+    canvas.onmousedown = (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+    };
+    
+    canvas.onmousemove = (e) => {
+        if (isDragging) {
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            surfaceMapState.rotationY += deltaX * 0.5;
+            surfaceMapState.rotationX += deltaY * 0.5;
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+            
+            render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+        }
+    };
+    
+    canvas.onmouseup = () => {
+        isDragging = false;
+    };
+    
+    canvas.onmouseleave = () => {
+        isDragging = false;
+    };
+    
+    // Mouse wheel to zoom
+    canvas.onwheel = (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+            surfaceMapState.zoom *= 1.1;
+        } else {
+            surfaceMapState.zoom /= 1.1;
+        }
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
 }
 
 function findMaxFitness(initialGuess, measurements) {
