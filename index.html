@@ -677,29 +677,13 @@ async function findBestRectangularStart(measurements) {
     
     let bestGuess = null;
     let bestFitness = Infinity; // Lower is better
-    let testedCount = 0;
-    const totalTests = 50 * 50; // 2500 combinations
     
-    // Create array of all width/height combinations to test
-    const combinations = [];
-    for (let width = 100; width <= 5000; width += 100) {
-        for (let height = 100; height <= 5000; height += 100) {
-            combinations.push({width, height});
-        }
-    }
+    // Phase 1: Coarse search - test every 500mm from 100 to 5000
+    console.log("Phase 1: Coarse search (500mm increments)...");
+    messagesBox.value += "Phase 1: Coarse search...\n";
     
-    // Process in chunks to keep UI responsive
-    const chunkSize = 50; // Process 50 configurations at a time
-    for (let i = 0; i < combinations.length; i += chunkSize) {
-        const chunk = combinations.slice(i, Math.min(i + chunkSize, combinations.length));
-        
-        for (const {width, height} of chunk) {
-            // Create a rectangular guess with the assumptions:
-            // bl.x = 0, bl.y = 0
-            // br.y = 0
-            // tl.x = 0 (rectangular)
-            // tl.y = tr.y (rectangular)
-            // br.x = tr.x (rectangular)
+    for (let width = 100; width <= 5000; width += 500) {
+        for (let height = 100; height <= 5000; height += 500) {
             const guess = {
                 tl: {x: 0, y: height},
                 tr: {x: width, y: height},
@@ -708,30 +692,52 @@ async function findBestRectangularStart(measurements) {
                 fitness: 0
             };
             
-            // Compute fitness for this configuration
             const result = computeLinesFitness(measurements, guess);
             
-            testedCount++;
-            
-            // Track the best configuration (lower fitness is better)
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
                 bestGuess = JSON.parse(JSON.stringify(result));
             }
         }
-        
-        // Update progress after each chunk
-        const progress = ((testedCount / totalTests) * 100).toFixed(1);
-        console.log(`Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
-        messagesBox.value = `Searching: ${progress}% complete\nBest so far: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}\n`;
-        
-        // Yield to browser to keep UI responsive
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Yield occasionally
+        if (width % 1000 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
     }
     
-    console.log(`Search complete! Tested ${testedCount} configurations.`);
-    console.log(`Best rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
-    messagesBox.value += `\n✓ Search complete!\nBest rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm\nFitness: ${(1/bestGuess.fitness).toFixed(4)}\n`;
+    console.log(`Phase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
+    messagesBox.value += `Phase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm\n`;
+    
+    // Phase 2: Fine search - test every 100mm around the best from phase 1
+    console.log("Phase 2: Fine search (100mm increments around best)...");
+    messagesBox.value += "Phase 2: Refining...\n";
+    
+    const bestWidth = bestGuess.tr.x;
+    const bestHeight = bestGuess.tr.y;
+    const searchRadius = 500; // Search +/- 500mm around best
+    
+    for (let width = Math.max(100, bestWidth - searchRadius); width <= Math.min(5000, bestWidth + searchRadius); width += 100) {
+        for (let height = Math.max(100, bestHeight - searchRadius); height <= Math.min(5000, bestHeight + searchRadius); height += 100) {
+            const guess = {
+                tl: {x: 0, y: height},
+                tr: {x: width, y: height},
+                bl: {x: 0, y: 0},
+                br: {x: width, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurements, guess);
+            
+            if (result.fitness < bestFitness) {
+                bestFitness = result.fitness;
+                bestGuess = JSON.parse(JSON.stringify(result));
+            }
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    console.log(`Search complete! Best rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
+    messagesBox.value = `✓ Search complete!\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     
     return bestGuess;
 }
