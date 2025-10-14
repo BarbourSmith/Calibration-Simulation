@@ -18,6 +18,17 @@
         <option value="200">200mm (coarse)</option>
         <option value="500">500mm (very coarse, fastest)</option>
     </select>
+    
+    <label for="radius-tolerance">Radius Band (mm):</label>
+    <select id="radius-tolerance">
+        <option value="50">±50mm (very narrow, fastest)</option>
+        <option value="100">±100mm (narrow)</option>
+        <option value="150">±150mm (medium)</option>
+        <option value="200">±200mm (wide)</option>
+        <option value="300" selected>±300mm (default)</option>
+        <option value="400">±400mm (very wide)</option>
+        <option value="500">±500mm (widest)</option>
+    </select>
     <style>
         body {
             margin: 0;
@@ -780,13 +791,15 @@ async function findBestRectangularStart(measurements) {
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
-    const radiusMargin = 300; // ±300mm band around the circle
+    // Get user-configured radius tolerance from UI
+    const radiusToleranceSelect = document.getElementById('radius-tolerance');
+    const radiusMargin = parseInt(radiusToleranceSelect.value);
     
     messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
     messagesBox.value += `Phase 2: Testing points within ±${radiusMargin}mm of radius circle...\n`;
     searchStatus.textContent = `Phase 2: Testing circular band (radius ${optimalRadius.toFixed(0)}mm ±${radiusMargin}mm)...`;
     
-    // PHASE 2: Search only points within ±300mm of the optimal radius circle
+    // PHASE 2: Search only points within ±radiusMargin of the optimal radius circle
     let bestGuess = null;
     let bestFitness = Infinity;
     let testedCount = 0;
@@ -817,7 +830,7 @@ async function findBestRectangularStart(measurements) {
             // Calculate distance from origin (0,0) to this rectangular frame point
             const radius = Math.sqrt(width * width + height * height);
             
-            // Only test if within ±300mm of optimal radius
+            // Only test if within ±radiusMargin of optimal radius
             if (Math.abs(radius - optimalRadius) <= radiusMargin) {
                 const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
                 const guess = {
