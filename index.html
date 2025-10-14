@@ -568,8 +568,6 @@ function printResults(guess){
     let guessString = "Fitness: " + 1/guess.fitness + "(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")";
     output.value += guessString + "\n";
 
-    console.log(guessString); 
-
 }
 
 /**
@@ -675,7 +673,6 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
  * @returns {Promise<Object>} - Promise that resolves to best guess configuration with highest fitness
  */
 async function findBestRectangularStart(measurements) {
-    console.log("Searching for best rectangular starting configuration...");
     const messagesBox = document.getElementById('output');
     messagesBox.value = "Searching for best starting configuration...\n";
     messagesBox.value += "Testing entire space with 100mm increments (100-5000mm)...\n";
@@ -689,7 +686,6 @@ async function findBestRectangularStart(measurements) {
     const totalTests = 50 * 50; // 2500 combinations
     
     // Search entire space with 100mm increments
-    console.log("Searching entire space with 100mm increments...");
     
     for (let width = 100; width <= 5000; width += 100) {
         for (let height = 100; height <= 5000; height += 100) {
@@ -718,14 +714,12 @@ async function findBestRectangularStart(measurements) {
             const progress = ((testedCount / totalTests) * 100).toFixed(1);
             messagesBox.value += `Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}\n`;
             messagesBox.scrollTop = messagesBox.scrollHeight;
-            console.log(`Progress: ${progress}% (${testedCount}/${totalTests}) - Best so far: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
             
             // Yield to browser to keep UI responsive
             await new Promise(resolve => setTimeout(resolve, 0));
         }
     }
     
-    console.log(`Search complete! Tested ${testedCount} configurations. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
     messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
@@ -763,8 +757,6 @@ function findMaxFitness(initialGuess, measurements) {
               bestGuess: bestGuess,
               totalCounter
             });
-
-            console.log("Total Counter: " + totalCounter);
 
             if(totalCounter % 100 == 0){
                 const output = document.getElementById('output');
@@ -831,15 +823,13 @@ function findMaxFitness(initialGuess, measurements) {
  */
 function sendCalibrationEvent(dataToSend, log = false) {
   try {
-    if (log) {
-      console.log(JSON.stringify(dataToSend, null, 2));
-    }
     document.body.dispatchEvent(new CustomEvent(CALIBRATION_EVENT_NAME, {
       bubbles: true,
       cancelable: true,
       detail: dataToSend
     }));
   } catch (err) {
+    // Keep console.error for debugging actual errors
     console.error('Unexpected:', err);
   }
 }
@@ -868,7 +858,6 @@ const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
     clearCanvas();
     initialGuess = computeLinesFitness(measurements, initialGuess);
-    console.log("Fitness: " + 1/initialGuess.fitness);
     printResults(initialGuess);
 });
 
@@ -879,7 +868,6 @@ compute1kButton.addEventListener('click', () => {
     for(let i = 0; i < 1000; i++){
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
     }
     printResults(initialGuess);
 });
@@ -890,7 +878,6 @@ compute10kButton.addEventListener('click', () => {
     function loop() {
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
         i++;
         if (i < 10000) {
             requestAnimationFrame(loop);
@@ -927,7 +914,9 @@ const computeConvergeButton = document.getElementById('compute-converge-button')
 computeConvergeButton.addEventListener('click', async () => {
     // Find the best rectangular starting configuration once
     var bestRectangularStart = await findBestRectangularStart(measurements);
-    console.log("Using best rectangular start for convergence iterations");
+    const messagesBox = document.getElementById('output');
+    messagesBox.value += "Using best rectangular start for convergence iterations\n";
+    messagesBox.scrollTop = messagesBox.scrollHeight;
 
     function computeGuess() {
         // Clear the canvas
