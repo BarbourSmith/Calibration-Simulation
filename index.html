@@ -683,7 +683,7 @@ function findMaxFitness(initialGuess, measurements) {
         if (aggressiveCounter < 2500) {
             clearCanvas();
 
-            let randomJumpDist = 200;
+            let randomJumpDist = 400;
 
             // Create a new guess with aggressive random jumps
             let testGuess = JSON.parse(JSON.stringify(bestGuess));
@@ -692,9 +692,6 @@ function findMaxFitness(initialGuess, measurements) {
             testGuess.tr.x = bestGuess.tr.x + Math.random() * randomJumpDist - randomJumpDist / 2;
             testGuess.tr.y = bestGuess.tr.y + Math.random() * randomJumpDist - randomJumpDist / 2;
             testGuess.br.x = bestGuess.br.x + Math.random() * randomJumpDist - randomJumpDist / 2;
-            testGuess.br.y = bestGuess.br.y + Math.random() * randomJumpDist - randomJumpDist / 2;
-            testGuess.bl.x = bestGuess.bl.x + Math.random() * randomJumpDist - randomJumpDist / 2;
-            testGuess.bl.y = bestGuess.bl.y + Math.random() * randomJumpDist - randomJumpDist / 2;
 
             testGuess = computeLinesFitness(measurements, testGuess);
 
@@ -879,9 +876,6 @@ compute1kButton.addEventListener('click', () => {
             testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
             testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
             testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
-            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
-            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
-            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
             
             testGuess = computeLinesFitness(measurements, testGuess);
             
@@ -891,7 +885,7 @@ compute1kButton.addEventListener('click', () => {
             }
             
             if((i+1) % 100 == 0){
-                document.getElementById('output').value = "Aggressive exploration: " + (i+1) + "/500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
+                document.getElementById('output').value = "Aggressive exploration: " + (i+1) + "/3500 - Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + "\n";
             }
         }
         initialGuess = JSON.parse(JSON.stringify(bestGuess));
@@ -931,9 +925,6 @@ compute10kButton.addEventListener('click', () => {
             testGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
             testGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
             testGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
-            testGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
-            testGuess.bl.x = bestGuess.bl.x + Math.random() * 100 - 50;
-            testGuess.bl.y = bestGuess.bl.y + Math.random() * 100 - 50;
             
             testGuess = computeLinesFitness(measurements, testGuess);
             
