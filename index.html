@@ -2,36 +2,376 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Calibration Simulation</title>
-    <button id="compute-button">Refine Measurments 1x</button>
-    <button id="compute-1k-button">1,000x</button>
-    <button id="compute-10k-button">10,000x</button>
-    <button id="compute-end-button">End</button>
-    <button id="compute-converge-button">Converge</button>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maslow CNC Calibration Simulation</title>
     <style>
-        body {
+        * {
             margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #2563eb;
+            --primary-dark: #1e40af;
+            --primary-light: #3b82f6;
+            --secondary-color: #06b6d4;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --dark-bg: #1e293b;
+            --card-bg: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: white;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        header p {
+            font-size: 1.125rem;
+            opacity: 0.95;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow-xl);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .card-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .card-description {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
+            font-family: inherit;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary-color));
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, var(--secondary-color), #0891b2);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(135deg, #0e7490, var(--secondary-color));
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success-color), #059669);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: linear-gradient(135deg, #047857, var(--success-color));
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger-color), #dc2626);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #b91c1c, var(--danger-color));
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        textarea, input {
+            width: 100%;
+            padding: 0.875rem;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            background: #f8fafc;
+        }
+
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: white;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        textarea::placeholder {
+            color: #94a3b8;
+        }
+
+        .parse-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        #parse-status {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        #parse-status.success {
+            color: var(--success-color);
+        }
+
+        #parse-status.error {
+            color: var(--danger-color);
+        }
+
+        .canvas-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+        }
+
+        #CursorLayer {
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 1000px;
+            height: auto;
+            display: block;
+        }
+
+        .output-container {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 0.5rem;
+        }
+
+        #output {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: none;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            resize: vertical;
+        }
+
+        #output:focus {
+            border: none;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        .instruction-banner {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #78350f;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            text-align: center;
+            box-shadow: var(--shadow-md);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem 0.5rem;
+            }
+
+            header h1 {
+                font-size: 1.875rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card {
+            animation: fadeIn 0.5s ease forwards;
+        }
+
+        .card:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .card:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .card:nth-child(4) {
+            animation-delay: 0.3s;
         }
     </style>
-    
 </head>
-<body id= "mainBody">
+<body id="mainBody">
+    <div class="container">
+        <header>
+            <h1>🔧 Maslow CNC Calibration</h1>
+            <p>Advanced Calibration Simulation Tool</p>
+        </header>
 
-<---click this button to see the simulation find the corners
+        <div class="instruction-banner">
+            💡 Click the buttons below to refine your calibration measurements
+        </div>
 
-<div>
-    <label for="calibration-input">Calibration Data (paste your measurements here):</label><br>
-    <textarea id="calibration-input" style="width: 1000px;" rows="6" placeholder="Paste calibration data like: {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76},{bl:2132.14, br:1584.18, tr:1955.15, tl:2154.52},..."></textarea><br>
-    <button id="parse-data-button">Parse Calibration Data</button>
-    <span id="parse-status" style="margin-left: 10px; font-weight: bold;"></span>
-</div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Calibration Controls</h2>
+                <p class="card-description">Run calibration iterations to optimize corner positions</p>
+            </div>
+            <div class="button-group">
+                <button id="compute-button" class="btn-primary">Refine Measurements 1x</button>
+                <button id="compute-1k-button" class="btn-secondary">1,000x Iterations</button>
+                <button id="compute-10k-button" class="btn-secondary">10,000x Iterations</button>
+                <button id="compute-converge-button" class="btn-success">Converge</button>
+                <button id="compute-end-button" class="btn-danger">End</button>
+            </div>
+        </div>
 
-<div id = "views"></div>
-<div>
-    <textarea id="output" style="width: 1000px;" rows="16"></textarea>
-</div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Calibration Data Input</h2>
+                <p class="card-description">Paste your measurement data from the CNC machine</p>
+            </div>
+            <div class="form-group">
+                <label for="calibration-input">Measurement Data</label>
+                <textarea id="calibration-input" rows="6" placeholder="Paste calibration data like: {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76},{bl:2132.14, br:1584.18, tr:1955.15, tl:2154.52},..."></textarea>
+            </div>
+            <div class="parse-section">
+                <button id="parse-data-button" class="btn-primary">Parse Calibration Data</button>
+                <span id="parse-status"></span>
+            </div>
+        </div>
 
-</div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Visualization</h2>
+                <p class="card-description">Real-time calibration convergence display</p>
+            </div>
+            <div id="views" class="canvas-container"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Results</h2>
+                <p class="card-description">Fitness values and corner coordinates</p>
+            </div>
+            <div class="output-container">
+                <textarea id="output" rows="16" readonly></textarea>
+            </div>
+        </div>
+    </div>
 
 
 
@@ -779,7 +1119,6 @@ var canvas = document.createElement('canvas');
 canvas.id     = "CursorLayer";
 canvas.width  = 1000;
 canvas.height = 600;
-canvas.style.border   = "1px solid";
 document.getElementById("views").appendChild(canvas);
 
 
