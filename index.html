@@ -216,7 +216,7 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
  * @param {Object} individual - An object containing the x and y coordinates for each line's starting point.
  * @returns {Object} - An object containing the fitness value and the final positions of each line.
  */
-function magneticallyAttractedLinesFitness(measurement, individual){
+function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing = false){
 
     //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
     if(typeof measurement.tlTheta === 'undefined'){
@@ -261,12 +261,16 @@ function magneticallyAttractedLinesFitness(measurement, individual){
     measurement.TLtension = TL;
     measurement.TRtension = TR;
 
-    drawLines(tlLine, trLine, blLine, brLine, individual);
+    if (!skipDrawing) {
+        drawLines(tlLine, trLine, blLine, brLine, individual);
+    }
 
-    sendCalibrationEvent({
-      finalFitness,
-      tensions: { TL, TR }
-    });
+    if (!skipDrawing) {
+        sendCalibrationEvent({
+          finalFitness,
+          tensions: { TL, TR }
+        });
+    }
 
     return {fitness: finalFitness, lines: {tlLine: tlLine, trLine: trLine, blLine: blLine, brLine: brLine}};
 }
@@ -380,13 +384,13 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
  * @param {Object} lastGuess - The last guess made by the algorithm.
  * @returns {Object} - An object containing the fitness of the guess and the lines used to calculate the fitness.
  */
-function computeLinesFitness(measurements, lastGuess){
+function computeLinesFitness(measurements, lastGuess, skipDrawing = false){
     var fitnesses = [];
     var allLines = [];
     
     //Check each of the measurements against the guess
     measurements.forEach(measurement => {
-        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess);
+        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess, skipDrawing);
         fitnesses.push(fitness);
         allLines.push(lines);
     });
@@ -692,7 +696,7 @@ async function findBestRectangularStart(measurements) {
                 fitness: 0
             };
             
-            const result = computeLinesFitness(measurements, guess);
+            const result = computeLinesFitness(measurements, guess, true); // Skip drawing for speed
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -726,7 +730,7 @@ async function findBestRectangularStart(measurements) {
                 fitness: 0
             };
             
-            const result = computeLinesFitness(measurements, guess);
+            const result = computeLinesFitness(measurements, guess, true); // Skip drawing for speed
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
