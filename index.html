@@ -678,19 +678,21 @@ async function findBestRectangularStart(measurements) {
     console.log("Searching for best rectangular starting configuration...");
     const messagesBox = document.getElementById('output');
     messagesBox.value = "Searching for best starting configuration...\n";
+    messagesBox.value += "Testing entire space with 100mm increments (100-5000mm)...\n";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
     let bestGuess = null;
     let bestFitness = Infinity; // Lower is better
+    let testedCount = 0;
+    const totalTests = 50 * 50; // 2500 combinations
     
-    // Phase 1: Coarse search - test every 500mm from 100 to 5000
-    console.log("Phase 1: Coarse search (500mm increments)...");
-    messagesBox.value += "Phase 1: Coarse search (500mm increments)...\n";
+    // Search entire space with 100mm increments
+    console.log("Searching entire space with 100mm increments...");
     
-    for (let width = 100; width <= 5000; width += 500) {
-        for (let height = 100; height <= 5000; height += 500) {
+    for (let width = 100; width <= 5000; width += 100) {
+        for (let height = 100; height <= 5000; height += 100) {
             // Make fresh copy for each test
             const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
             const guess = {
@@ -703,63 +705,28 @@ async function findBestRectangularStart(measurements) {
             
             const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
             
-            // Display each test result in UI
-            const testResult = `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
-            messagesBox.value += testResult;
-            messagesBox.scrollTop = messagesBox.scrollHeight;
+            testedCount++;
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
                 bestGuess = JSON.parse(JSON.stringify(result));
             }
         }
-        // Yield occasionally
-        if (width % 1000 === 0) {
+        
+        // Update progress every 250 tests (every 5 widths)
+        if (testedCount % 250 === 0) {
+            const progress = ((testedCount / totalTests) * 100).toFixed(1);
+            messagesBox.value += `Progress: ${progress}% (${testedCount}/${totalTests}) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}\n`;
+            messagesBox.scrollTop = messagesBox.scrollHeight;
+            console.log(`Progress: ${progress}% (${testedCount}/${totalTests}) - Best so far: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
+            
+            // Yield to browser to keep UI responsive
             await new Promise(resolve => setTimeout(resolve, 0));
         }
     }
     
-    console.log(`Phase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`);
-    messagesBox.value += `\nPhase 1 complete. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}\n\n`;
-    messagesBox.scrollTop = messagesBox.scrollHeight;
-    
-    // Phase 2: Fine search - test every 100mm around the best from phase 1
-    console.log("Phase 2: Fine search (100mm increments around best)...");
-    messagesBox.value += "Phase 2: Fine search (100mm increments)...\n";
-    
-    const bestWidth = bestGuess.tr.x;
-    const bestHeight = bestGuess.tr.y;
-    const searchRadius = 500; // Search +/- 500mm around best
-    
-    for (let width = Math.max(100, bestWidth - searchRadius); width <= Math.min(5000, bestWidth + searchRadius); width += 100) {
-        for (let height = Math.max(100, bestHeight - searchRadius); height <= Math.min(5000, bestHeight + searchRadius); height += 100) {
-            // Make fresh copy for each test
-            const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-            const guess = {
-                tl: {x: 0, y: height},
-                tr: {x: width, y: height},
-                bl: {x: 0, y: 0},
-                br: {x: width, y: 0},
-                fitness: 0
-            };
-            
-            const result = computeLinesFitness(testMeasurements, guess, true); // Skip drawing for speed
-            
-            // Display each test result in UI
-            const testResult = `  ${width}x${height}mm - fitness: ${(1/result.fitness).toFixed(4)}\n`;
-            messagesBox.value += testResult;
-            messagesBox.scrollTop = messagesBox.scrollHeight;
-            
-            if (result.fitness < bestFitness) {
-                bestFitness = result.fitness;
-                bestGuess = JSON.parse(JSON.stringify(result));
-            }
-        }
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    
-    console.log(`Search complete! Best rectangular start: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
-    messagesBox.value += `\n✓ Search complete!\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    console.log(`Search complete! Tested ${testedCount} configurations. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`);
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
