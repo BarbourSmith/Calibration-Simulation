@@ -9,17 +9,6 @@
     <button id="compute-end-button">End</button>
     <button id="compute-converge-button">Converge</button>
     <br>
-    <label for="arc-spacing">Arc Spacing (mm):</label>
-    <select id="arc-spacing">
-        <option value="1">1mm (ultra fine, very slow)</option>
-        <option value="5">5mm (extremely fine, slow)</option>
-        <option value="10">10mm (very fine)</option>
-        <option value="25">25mm (fine)</option>
-        <option value="50">50mm (medium)</option>
-        <option value="100" selected>100mm (default)</option>
-        <option value="200">200mm (coarse)</option>
-        <option value="300">300mm (very coarse, fastest)</option>
-    </select>
     <style>
         body {
             margin: 0;
@@ -732,97 +721,28 @@ async function findBestRectangularStart(measurements) {
     const canvas = document.getElementById('surface-map-canvas');
     const searchStatus = document.getElementById('search-status');
     
-    // Get user-selected arc spacing in mm
-    const arcSpacingSelect = document.getElementById('arc-spacing');
-    const arcSpacing = parseFloat(arcSpacingSelect.value);
-    const gridSpacing = 100; // Used only for Phase 1 diagonal fine scan
+    // Arc spacing is now fixed at 1mm for optimal precision
+    const arcSpacing = 1;
     
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
     canvas.style.display = 'block';
     
     messagesBox.value = "Searching for best starting configuration...\n";
-    messagesBox.value += `Using arc spacing: ${arcSpacing}mm\n`;
-    messagesBox.value += "Phase 1: Finding optimal radius along diagonal...\n";
-    searchStatus.textContent = "Phase 1: Scanning diagonal to find optimal radius...";
+    messagesBox.value += "Phase 1: Finding optimal radius along diagonal using ternary search...\n";
+    searchStatus.textContent = "Phase 1: Ternary search for optimal radius...";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // PHASE 1: Multi-stage diagonal scan to find optimal radius with progressive refinement
+    // PHASE 1: Use ternary search to find optimal diagonal size efficiently
     let diagonalBestFitness = Infinity;
     let diagonalBestSize = 0;
     let diagonalResults = [];
+    let phase1TestCount = 0;
     
-    // Stage 1: Coarse scan at 100mm to quickly find general area
-    messagesBox.value += `\nPhase 1 Stage 1: Coarse diagonal scan (100mm increments)...\n`;
-    searchStatus.textContent = `Phase 1 Stage 1: Coarse diagonal scan (100mm)...`;
-    
-    let stageBestFitness = Infinity;
-    let stageBestSize = 0;
-    
-    for (let size = 100; size <= 5000; size += 100) {
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(testMeasurements, guess, true);
-        
-        if (result.fitness < stageBestFitness) {
-            stageBestFitness = result.fitness;
-            stageBestSize = size;
-        }
-        
-        if (size % 500 === 0) {
-            searchStatus.textContent = `Phase 1 Stage 1: Testing ${size}mm - Best: ${stageBestSize}mm`;
-            await new Promise(resolve => setTimeout(resolve, 1));
-        }
-    }
-    
-    messagesBox.value += `Stage 1 complete: Best at ${stageBestSize}mm\n`;
-    
-    // Stage 2: Refine to 10mm precision within ±200mm
-    messagesBox.value += `Phase 1 Stage 2: Refining to 10mm precision near ${stageBestSize}mm...\n`;
-    searchStatus.textContent = `Phase 1 Stage 2: Refining to 10mm...`;
-    
-    const stage2Min = Math.max(10, stageBestSize - 200);
-    const stage2Max = Math.min(5000, stageBestSize + 200);
-    stageBestFitness = Infinity;
-    
-    for (let size = stage2Min; size <= stage2Max; size += 10) {
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(testMeasurements, guess, true);
-        
-        if (result.fitness < stageBestFitness) {
-            stageBestFitness = result.fitness;
-            stageBestSize = size;
-        }
-    }
-    
-    messagesBox.value += `Stage 2 complete: Best at ${stageBestSize}mm\n`;
-    
-    // Stage 3: Refine to 1mm precision within ±20mm
-    messagesBox.value += `Phase 1 Stage 3: Refining to 1mm precision near ${stageBestSize}mm...\n`;
-    searchStatus.textContent = `Phase 1 Stage 3: Refining to 1mm...`;
-    
-    const stage3Min = Math.max(1, stageBestSize - 20);
-    const stage3Max = Math.min(5000, stageBestSize + 20);
-    stageBestFitness = Infinity;
-    
-    for (let size = stage3Min; size <= stage3Max; size += 1) {
+    // Helper function to evaluate fitness at a given diagonal size
+    async function evaluateDiagonalSize(size) {
         const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
             tl: {x: 0, y: size},
@@ -835,17 +755,53 @@ async function findBestRectangularStart(measurements) {
         const result = computeLinesFitness(testMeasurements, guess, true);
         const fitnessValue = 1 / result.fitness;
         diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
+        phase1TestCount++;
         
-        if (result.fitness < stageBestFitness) {
-            stageBestFitness = result.fitness;
-            stageBestSize = size;
+        return { fitness: result.fitness, size: size };
+    }
+    
+    // Ternary search for optimal diagonal size (100 to 5000mm range)
+    let leftSize = 100;
+    let rightSize = 5000;
+    const precision = 2; // Stop when range is less than 2mm
+    
+    while (rightSize - leftSize > precision) {
+        const leftThird = leftSize + (rightSize - leftSize) / 3;
+        const rightThird = rightSize - (rightSize - leftSize) / 3;
+        
+        const leftResult = await evaluateDiagonalSize(Math.round(leftThird));
+        const rightResult = await evaluateDiagonalSize(Math.round(rightThird));
+        
+        if (leftResult.fitness < diagonalBestFitness) {
+            diagonalBestFitness = leftResult.fitness;
+            diagonalBestSize = leftResult.size;
+        }
+        if (rightResult.fitness < diagonalBestFitness) {
+            diagonalBestFitness = rightResult.fitness;
+            diagonalBestSize = rightResult.size;
+        }
+        
+        // Update progress
+        const searchRange = ((rightSize - leftSize) / 4900 * 100).toFixed(1);
+        searchStatus.textContent = `Phase 1: Ternary search (${phase1TestCount} tested, ${searchRange}% range remaining) - Best: ${diagonalBestSize}mm`;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+        if (leftResult.fitness < rightResult.fitness) {
+            rightSize = rightThird;
+        } else {
+            leftSize = leftThird;
         }
     }
     
-    diagonalBestFitness = stageBestFitness;
-    diagonalBestSize = stageBestSize;
+    // Evaluate the final center point
+    const finalDiagonalSize = Math.round((leftSize + rightSize) / 2);
+    const finalDiagonalResult = await evaluateDiagonalSize(finalDiagonalSize);
+    if (finalDiagonalResult.fitness < diagonalBestFitness) {
+        diagonalBestFitness = finalDiagonalResult.fitness;
+        diagonalBestSize = finalDiagonalResult.size;
+    }
     
-    messagesBox.value += `Stage 3 complete: Best at ${diagonalBestSize}mm with 1mm precision\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius found at ${diagonalBestSize}mm using ${phase1TestCount} evaluations (ternary search)\n`;
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
@@ -967,8 +923,8 @@ async function findBestRectangularStart(measurements) {
     // Setup controls
     setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using ternary search. Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using efficient ternary search (target precision: ${arcSpacing}mm).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using ternary search (1mm precision). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using efficient ternary search (1mm precision).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
