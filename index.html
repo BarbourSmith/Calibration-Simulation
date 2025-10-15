@@ -1556,12 +1556,31 @@ compute10kButton.addEventListener('click', () => {
 
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', async () => {
-    // First find the best rectangular starting configuration
-    var bestRectangularStart = await findBestRectangularStart(measurements);
+    // Evaluate the fitness of the initial guess
+    const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
+    const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
+    const initialFitness = 1 / evaluatedGuess.fitness;
     
-    // Use the best rectangular configuration as the starting point for full optimization
+    const messagesBox = document.getElementById('output');
+    messagesBox.value += `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
+    
+    var startingGuess;
+    
+    // Only use rectangular optimization if initial fitness is less than 0.1
+    if (initialFitness < 0.1) {
+        messagesBox.value += "Initial fitness < 0.1, skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        startingGuess = initialGuess;
+    } else {
+        messagesBox.value += "Initial fitness >= 0.1, running rectangular optimization to find better starting point.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        // First find the best rectangular starting configuration
+        startingGuess = await findBestRectangularStart(measurements);
+    }
+    
+    // Use the starting guess for full optimization
     // Note: findMaxFitness doesn't return a value, it runs async iterations
-    findMaxFitness(bestRectangularStart, measurements);
+    findMaxFitness(startingGuess, measurements);
 });
 
 
@@ -1576,17 +1595,36 @@ computeEndButton.addEventListener('click', async () => {
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
-    // Find the best rectangular starting configuration once
-    var bestRectangularStart = await findBestRectangularStart(measurements);
+    // Evaluate the fitness of the initial guess
+    const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
+    const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
+    const initialFitness = 1 / evaluatedGuess.fitness;
+    
     const messagesBox = document.getElementById('output');
-    messagesBox.value += "Using best rectangular start for convergence iterations\n";
+    messagesBox.value += `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
+    
+    var startingGuess;
+    
+    // Only use rectangular optimization if initial fitness is less than 0.1
+    if (initialFitness < 0.1) {
+        messagesBox.value += "Initial fitness < 0.1, skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        startingGuess = initialGuess;
+    } else {
+        messagesBox.value += "Initial fitness >= 0.1, running rectangular optimization to find better starting point.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        // Find the best rectangular starting configuration once
+        startingGuess = await findBestRectangularStart(measurements);
+    }
+    
+    messagesBox.value += "Using best start for convergence iterations\n";
     messagesBox.scrollTop = messagesBox.scrollHeight;
 
     function computeGuess() {
         // Clear the canvas
         clearCanvas();
 
-        var guessThisTime = JSON.parse(JSON.stringify(bestRectangularStart)); //Deep copy to break the reference to the best rectangular start
+        var guessThisTime = JSON.parse(JSON.stringify(startingGuess)); //Deep copy to break the reference to the starting guess
         //Randomize the initial guess +- 200mm
         guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
         guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
