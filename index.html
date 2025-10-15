@@ -834,8 +834,11 @@ async function findBestRectangularStart(measurements) {
             // Calculate distance from origin (0,0) to this rectangular frame point
             const radius = Math.sqrt(width * width + height * height);
             
-            // Only test if within ±radiusMargin of optimal radius
-            if (Math.abs(radius - optimalRadius) <= radiusMargin) {
+            // Calculate aspect ratio to filter out extreme shapes
+            const aspectRatio = width > height ? width / height : height / width;
+            
+            // Only test if within ±radiusMargin of optimal radius AND aspect ratio <= 3:1
+            if (Math.abs(radius - optimalRadius) <= radiusMargin && aspectRatio <= 3) {
                 const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
                 const guess = {
                     tl: {x: 0, y: height},
