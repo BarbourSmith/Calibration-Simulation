@@ -9,15 +9,14 @@
     <button id="compute-end-button">End</button>
     <button id="compute-converge-button">Converge</button>
     <br>
-    <label for="arc-angle-spacing">Arc Angle Spacing (degrees):</label>
-    <select id="arc-angle-spacing">
-        <option value="0.1">0.1° (ultra fine, very slow)</option>
-        <option value="0.5">0.5° (extremely fine, slow)</option>
-        <option value="1">1° (very fine)</option>
-        <option value="2">2° (fine)</option>
-        <option value="5" selected>5° (default)</option>
-        <option value="10">10° (coarse)</option>
-        <option value="15">15° (very coarse, fastest)</option>
+    <label for="arc-spacing">Arc Spacing (mm):</label>
+    <select id="arc-spacing">
+        <option value="10">10mm (ultra fine, very slow)</option>
+        <option value="25">25mm (extremely fine, slow)</option>
+        <option value="50">50mm (very fine)</option>
+        <option value="100" selected>100mm (default)</option>
+        <option value="200">200mm (coarse)</option>
+        <option value="300">300mm (very coarse, fastest)</option>
     </select>
     <style>
         body {
@@ -731,9 +730,9 @@ async function findBestRectangularStart(measurements) {
     const canvas = document.getElementById('surface-map-canvas');
     const searchStatus = document.getElementById('search-status');
     
-    // Get user-selected arc angle spacing
-    const arcAngleSpacingSelect = document.getElementById('arc-angle-spacing');
-    const arcAngleSpacing = parseFloat(arcAngleSpacingSelect.value);
+    // Get user-selected arc spacing in mm
+    const arcSpacingSelect = document.getElementById('arc-spacing');
+    const arcSpacing = parseFloat(arcSpacingSelect.value);
     const gridSpacing = 100; // Used only for Phase 1 diagonal fine scan
     
     // Show 3D visualization elements
@@ -741,7 +740,7 @@ async function findBestRectangularStart(measurements) {
     canvas.style.display = 'block';
     
     messagesBox.value = "Searching for best starting configuration...\n";
-    messagesBox.value += `Using arc angle spacing: ${arcAngleSpacing}°\n`;
+    messagesBox.value += `Using arc spacing: ${arcSpacing}mm\n`;
     messagesBox.value += "Phase 1: Finding optimal radius along diagonal...\n";
     searchStatus.textContent = "Phase 1: Scanning diagonal to find optimal radius...";
     
@@ -825,7 +824,7 @@ async function findBestRectangularStart(measurements) {
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
     
     messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Testing points along arc at exactly ${optimalRadius.toFixed(0)}mm radius with ${arcAngleSpacing}° increments...\n`;
+    messagesBox.value += `Phase 2: Testing points along arc at exactly ${optimalRadius.toFixed(0)}mm radius with ${arcSpacing}mm spacing...\n`;
     searchStatus.textContent = `Phase 2: Testing points on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
     // PHASE 2: Sample points exactly on the optimal radius arc
@@ -851,14 +850,18 @@ async function findBestRectangularStart(measurements) {
     
     // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
     // We limit to angles where aspect ratio <= 3:1
-    const minAngle = Math.atan(1/3) * (180 / Math.PI); // ~18.43° (aspect ratio 3:1, wide)
-    const maxAngle = 90 - minAngle; // ~71.57° (aspect ratio 1:3, tall)
-    const totalAngles = Math.floor((maxAngle - minAngle) / arcAngleSpacing) + 1;
+    const minAngle = Math.atan(1/3); // ~18.43° in radians (aspect ratio 3:1, wide)
+    const maxAngle = Math.PI / 2 - minAngle; // ~71.57° in radians (aspect ratio 1:3, tall)
+    
+    // Convert arc spacing (mm) to angle increment (radians)
+    // Arc length = radius × angle, so angle = arc length / radius
+    const angleIncrement = arcSpacing / optimalRadius;
+    
+    // Calculate total number of points
+    const totalAngles = Math.floor((maxAngle - minAngle) / angleIncrement) + 1;
     
     let angleCount = 0;
-    for (let angleDeg = minAngle; angleDeg <= maxAngle; angleDeg += arcAngleSpacing) {
-        const angleRad = angleDeg * (Math.PI / 180);
-        
+    for (let angleRad = minAngle; angleRad <= maxAngle; angleRad += angleIncrement) {
         // Calculate rectangular frame dimensions from polar coordinates
         // For a rectangular frame with corners at (0,0), (width,0), (0,height), (width,height)
         // The top-right corner (width, height) is at distance 'optimalRadius' from origin
@@ -921,7 +924,7 @@ async function findBestRectangularStart(measurements) {
     setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess);
     
     searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points along arc. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points along arc at ${arcAngleSpacing}° increments.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points along arc at ${arcSpacing}mm spacing.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
