@@ -761,12 +761,53 @@ async function findBestRectangularStart(measurements) {
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // PHASE 1: Search along diagonal to find optimal radius
+    // PHASE 1: Multi-stage diagonal scan to find optimal radius
     let diagonalBestFitness = Infinity;
     let diagonalBestSize = 0;
     let diagonalResults = [];
     
-    for (let size = gridSpacing; size <= 5000; size += gridSpacing) {
+    // Stage 1: Coarse scan at 100mm to quickly find general area
+    messagesBox.value += `\nPhase 1 Stage 1: Coarse diagonal scan (100mm increments)...\n`;
+    searchStatus.textContent = `Phase 1 Stage 1: Coarse diagonal scan (100mm)...`;
+    
+    let coarseBestFitness = Infinity;
+    let coarseBestSize = 0;
+    const coarseSpacing = 100;
+    
+    for (let size = coarseSpacing; size <= 5000; size += coarseSpacing) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        
+        if (result.fitness < coarseBestFitness) {
+            coarseBestFitness = result.fitness;
+            coarseBestSize = size;
+        }
+        
+        // Update progress every 500mm
+        if (size % 500 === 0) {
+            searchStatus.textContent = `Phase 1 Stage 1: Testing ${size}mm - Best: ${coarseBestSize}mm`;
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    }
+    
+    messagesBox.value += `Stage 1 complete: Best at ${coarseBestSize}mm\n`;
+    
+    // Stage 2: Fine scan at user-selected spacing within ±500mm of coarse result
+    messagesBox.value += `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm increments) near ${coarseBestSize}mm...\n`;
+    searchStatus.textContent = `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm)...`;
+    
+    const fineMin = Math.max(gridSpacing, coarseBestSize - 500);
+    const fineMax = Math.min(5000, coarseBestSize + 500);
+    
+    for (let size = fineMin; size <= fineMax; size += gridSpacing) {
         const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
             tl: {x: 0, y: size},
@@ -785,10 +826,10 @@ async function findBestRectangularStart(measurements) {
             diagonalBestSize = size;
         }
         
-        // Update progress
-        const progressInterval = Math.max(gridSpacing * 5, 500);
-        if (size % progressInterval === 0) {
-            searchStatus.textContent = `Phase 1: Testing ${size}mm diagonal - Best so far: ${diagonalBestSize}mm`;
+        // Update progress periodically
+        const progressInterval = Math.max(gridSpacing * 5, 100);
+        if ((size - fineMin) % progressInterval === 0) {
+            searchStatus.textContent = `Phase 1 Stage 2: Testing ${size}mm - Best: ${diagonalBestSize}mm`;
             await new Promise(resolve => setTimeout(resolve, 1));
         }
     }
