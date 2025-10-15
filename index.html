@@ -19,19 +19,6 @@
         <option value="10">10° (coarse)</option>
         <option value="15">15° (very coarse, fastest)</option>
     </select>
-    
-    <label for="radius-tolerance">Radius Band (mm):</label>
-    <select id="radius-tolerance">
-        <option value="10">±10mm (ultra narrow, fastest)</option>
-        <option value="25">±25mm (extra narrow, very fast)</option>
-        <option value="50">±50mm (very narrow)</option>
-        <option value="100">±100mm (narrow)</option>
-        <option value="150">±150mm (medium)</option>
-        <option value="200">±200mm (wide)</option>
-        <option value="300" selected>±300mm (default)</option>
-        <option value="400">±400mm (very wide)</option>
-        <option value="500">±500mm (widest)</option>
-    </select>
     <style>
         body {
             margin: 0;
@@ -836,15 +823,12 @@ async function findBestRectangularStart(measurements) {
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
-    // Get user-configured radius tolerance from UI
-    const radiusToleranceSelect = document.getElementById('radius-tolerance');
-    const radiusMargin = parseInt(radiusToleranceSelect.value);
     
     messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Testing points along arc at ${arcAngleSpacing}° increments within ±${radiusMargin}mm...\n`;
-    searchStatus.textContent = `Phase 2: Testing arc points (radius ${optimalRadius.toFixed(0)}mm ±${radiusMargin}mm)...`;
+    messagesBox.value += `Phase 2: Testing points along arc at exactly ${optimalRadius.toFixed(0)}mm radius with ${arcAngleSpacing}° increments...\n`;
+    searchStatus.textContent = `Phase 2: Testing points on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
-    // PHASE 2: Sample points along arcs at different radii
+    // PHASE 2: Sample points exactly on the optimal radius arc
     let bestGuess = null;
     let bestFitness = Infinity;
     let testedCount = 0;
@@ -865,74 +849,63 @@ async function findBestRectangularStart(measurements) {
         fitnessData[i] = new Array(heightValues.length).fill(0);
     }
     
-    // Store all tested points for visualization
-    const testedPoints = [];
+    // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
+    // We limit to angles where aspect ratio <= 3:1
+    const minAngle = Math.atan(1/3) * (180 / Math.PI); // ~18.43° (aspect ratio 3:1, wide)
+    const maxAngle = 90 - minAngle; // ~71.57° (aspect ratio 1:3, tall)
+    const totalAngles = Math.floor((maxAngle - minAngle) / arcAngleSpacing) + 1;
     
-    // Sample multiple radii within the band
-    const radiusSpacing = 50; // Sample radii every 50mm
-    const minRadius = optimalRadius - radiusMargin;
-    const maxRadius = optimalRadius + radiusMargin;
-    
-    // For each radius in the band
-    for (let radius = minRadius; radius <= maxRadius; radius += radiusSpacing) {
-        // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
-        // We limit to angles where aspect ratio <= 3:1
-        const minAngle = Math.atan(1/3) * (180 / Math.PI); // ~18.43° (aspect ratio 3:1, wide)
-        const maxAngle = 90 - minAngle; // ~71.57° (aspect ratio 1:3, tall)
+    let angleCount = 0;
+    for (let angleDeg = minAngle; angleDeg <= maxAngle; angleDeg += arcAngleSpacing) {
+        const angleRad = angleDeg * (Math.PI / 180);
         
-        for (let angleDeg = minAngle; angleDeg <= maxAngle; angleDeg += arcAngleSpacing) {
-            const angleRad = angleDeg * (Math.PI / 180);
-            
-            // Calculate rectangular frame dimensions from polar coordinates
-            // For a rectangular frame with corners at (0,0), (width,0), (0,height), (width,height)
-            // The top-right corner (width, height) is at distance 'radius' from origin
-            const width = Math.round(radius * Math.cos(angleRad));
-            const height = Math.round(radius * Math.sin(angleRad));
-            
-            // Skip invalid dimensions
-            if (width <= 0 || height <= 0) continue;
-            
-            // Test this configuration
-            const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-            const guess = {
-                tl: {x: 0, y: height},
-                tr: {x: width, y: height},
-                bl: {x: 0, y: 0},
-                br: {x: width, y: 0},
-                fitness: 0
-            };
-            
-            const result = computeLinesFitness(testMeasurements, guess, true);
-            const fitnessValue = 1 / result.fitness;
-            
-            // Store point for visualization
-            testedPoints.push({width, height, fitnessValue});
-            
-            // Update fitness data for visualization (find closest grid point)
-            const widthIdx = widthValues.findIndex(w => Math.abs(w - width) < 50);
-            const heightIdx = heightValues.findIndex(h => Math.abs(h - height) < 50);
-            if (widthIdx >= 0 && heightIdx >= 0) {
-                fitnessData[widthIdx][heightIdx] = Math.max(fitnessData[widthIdx][heightIdx], fitnessValue);
-            }
-            
-            testedCount++;
-            
-            if (result.fitness < bestFitness) {
-                bestFitness = result.fitness;
-                bestGuess = JSON.parse(JSON.stringify(result));
-            }
+        // Calculate rectangular frame dimensions from polar coordinates
+        // For a rectangular frame with corners at (0,0), (width,0), (0,height), (width,height)
+        // The top-right corner (width, height) is at distance 'optimalRadius' from origin
+        const width = Math.round(optimalRadius * Math.cos(angleRad));
+        const height = Math.round(optimalRadius * Math.sin(angleRad));
+        
+        // Skip invalid dimensions
+        if (width <= 0 || height <= 0) continue;
+        
+        // Test this configuration
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: height},
+            tr: {x: width, y: height},
+            bl: {x: 0, y: 0},
+            br: {x: width, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        const fitnessValue = 1 / result.fitness;
+        
+        // Update fitness data for visualization (find closest grid point)
+        const widthIdx = widthValues.findIndex(w => Math.abs(w - width) < 50);
+        const heightIdx = heightValues.findIndex(h => Math.abs(h - height) < 50);
+        if (widthIdx >= 0 && heightIdx >= 0) {
+            fitnessData[widthIdx][heightIdx] = Math.max(fitnessData[widthIdx][heightIdx], fitnessValue);
+        }
+        
+        testedCount++;
+        angleCount++;
+        
+        if (result.fitness < bestFitness) {
+            bestFitness = result.fitness;
+            bestGuess = JSON.parse(JSON.stringify(result));
         }
         
         // Update progress and render incrementally
-        const progress = ((radius - minRadius) / (maxRadius - minRadius) * 100).toFixed(1);
-        if (bestGuess) {
-            searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-        } else {
-            searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Searching...`;
-        }
-        
-        // Render current data periodically
-        if ((radius - minRadius) % (radiusSpacing * 3) === 0) {
+        if (angleCount % 5 === 0 || angleCount === totalAngles) {
+            const progress = ((angleCount / totalAngles) * 100).toFixed(1);
+            if (bestGuess) {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+            } else {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Searching...`;
+            }
+            
+            // Render current data
             render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
             await new Promise(resolve => setTimeout(resolve, 10));
         }
