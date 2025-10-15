@@ -749,7 +749,7 @@ async function findBestRectangularStart(measurements) {
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // PHASE 1: Multi-stage diagonal scan to find optimal radius
+    // PHASE 1: Multi-stage diagonal scan to find optimal radius with progressive refinement
     let diagonalBestFitness = Infinity;
     let diagonalBestSize = 0;
     let diagonalResults = [];
@@ -758,11 +758,10 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `\nPhase 1 Stage 1: Coarse diagonal scan (100mm increments)...\n`;
     searchStatus.textContent = `Phase 1 Stage 1: Coarse diagonal scan (100mm)...`;
     
-    let coarseBestFitness = Infinity;
-    let coarseBestSize = 0;
-    const coarseSpacing = 100;
+    let stageBestFitness = Infinity;
+    let stageBestSize = 0;
     
-    for (let size = coarseSpacing; size <= 5000; size += coarseSpacing) {
+    for (let size = 100; size <= 5000; size += 100) {
         const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
             tl: {x: 0, y: size},
@@ -774,28 +773,56 @@ async function findBestRectangularStart(measurements) {
         
         const result = computeLinesFitness(testMeasurements, guess, true);
         
-        if (result.fitness < coarseBestFitness) {
-            coarseBestFitness = result.fitness;
-            coarseBestSize = size;
+        if (result.fitness < stageBestFitness) {
+            stageBestFitness = result.fitness;
+            stageBestSize = size;
         }
         
-        // Update progress every 500mm
         if (size % 500 === 0) {
-            searchStatus.textContent = `Phase 1 Stage 1: Testing ${size}mm - Best: ${coarseBestSize}mm`;
+            searchStatus.textContent = `Phase 1 Stage 1: Testing ${size}mm - Best: ${stageBestSize}mm`;
             await new Promise(resolve => setTimeout(resolve, 1));
         }
     }
     
-    messagesBox.value += `Stage 1 complete: Best at ${coarseBestSize}mm\n`;
+    messagesBox.value += `Stage 1 complete: Best at ${stageBestSize}mm\n`;
     
-    // Stage 2: Fine scan at user-selected spacing within ±500mm of coarse result
-    messagesBox.value += `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm increments) near ${coarseBestSize}mm...\n`;
-    searchStatus.textContent = `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm)...`;
+    // Stage 2: Refine to 10mm precision within ±200mm
+    messagesBox.value += `Phase 1 Stage 2: Refining to 10mm precision near ${stageBestSize}mm...\n`;
+    searchStatus.textContent = `Phase 1 Stage 2: Refining to 10mm...`;
     
-    const fineMin = Math.max(gridSpacing, coarseBestSize - 500);
-    const fineMax = Math.min(5000, coarseBestSize + 500);
+    const stage2Min = Math.max(10, stageBestSize - 200);
+    const stage2Max = Math.min(5000, stageBestSize + 200);
+    stageBestFitness = Infinity;
     
-    for (let size = fineMin; size <= fineMax; size += gridSpacing) {
+    for (let size = stage2Min; size <= stage2Max; size += 10) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        
+        if (result.fitness < stageBestFitness) {
+            stageBestFitness = result.fitness;
+            stageBestSize = size;
+        }
+    }
+    
+    messagesBox.value += `Stage 2 complete: Best at ${stageBestSize}mm\n`;
+    
+    // Stage 3: Refine to 1mm precision within ±20mm
+    messagesBox.value += `Phase 1 Stage 3: Refining to 1mm precision near ${stageBestSize}mm...\n`;
+    searchStatus.textContent = `Phase 1 Stage 3: Refining to 1mm...`;
+    
+    const stage3Min = Math.max(1, stageBestSize - 20);
+    const stage3Max = Math.min(5000, stageBestSize + 20);
+    stageBestFitness = Infinity;
+    
+    for (let size = stage3Min; size <= stage3Max; size += 1) {
         const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
             tl: {x: 0, y: size},
@@ -809,18 +836,16 @@ async function findBestRectangularStart(measurements) {
         const fitnessValue = 1 / result.fitness;
         diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
         
-        if (result.fitness < diagonalBestFitness) {
-            diagonalBestFitness = result.fitness;
-            diagonalBestSize = size;
-        }
-        
-        // Update progress periodically
-        const progressInterval = Math.max(gridSpacing * 5, 100);
-        if ((size - fineMin) % progressInterval === 0) {
-            searchStatus.textContent = `Phase 1 Stage 2: Testing ${size}mm - Best: ${diagonalBestSize}mm`;
-            await new Promise(resolve => setTimeout(resolve, 1));
+        if (result.fitness < stageBestFitness) {
+            stageBestFitness = result.fitness;
+            stageBestSize = size;
         }
     }
+    
+    diagonalBestFitness = stageBestFitness;
+    diagonalBestSize = stageBestSize;
+    
+    messagesBox.value += `Stage 3 complete: Best at ${diagonalBestSize}mm with 1mm precision\n`;
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
