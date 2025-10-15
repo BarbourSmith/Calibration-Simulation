@@ -834,11 +834,8 @@ async function findBestRectangularStart(measurements) {
             // Calculate distance from origin (0,0) to this rectangular frame point
             const radius = Math.sqrt(width * width + height * height);
             
-            // Calculate aspect ratio
-            const aspectRatio = width > height ? width / height : height / width;
-            
-            // Only test if within ±radiusMargin of optimal radius AND aspect ratio is 3:1 or less
-            if (Math.abs(radius - optimalRadius) <= radiusMargin && aspectRatio <= 3) {
+            // Only test if within ±radiusMargin of optimal radius
+            if (Math.abs(radius - optimalRadius) <= radiusMargin) {
                 const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
                 const guess = {
                     tl: {x: 0, y: height},
@@ -900,13 +897,15 @@ function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGue
     ctx.fillStyle = '#f0f0f0';
     ctx.fillRect(0, 0, width, height);
     
-    // Find min and max fitness for color mapping
+    // Find min and max fitness for color mapping (excluding zero/uncomputed values)
     let minFitness = Infinity;
     let maxFitness = -Infinity;
     for (let i = 0; i < fitnessData.length; i++) {
         for (let j = 0; j < fitnessData[i].length; j++) {
-            minFitness = Math.min(minFitness, fitnessData[i][j]);
-            maxFitness = Math.max(maxFitness, fitnessData[i][j]);
+            if (fitnessData[i][j] > 0) {  // Only consider non-zero computed values
+                minFitness = Math.min(minFitness, fitnessData[i][j]);
+                maxFitness = Math.max(maxFitness, fitnessData[i][j]);
+            }
         }
     }
     
@@ -932,10 +931,16 @@ function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGue
         return { x: screenX, y: screenY, z: z2 };
     }
     
-    // Draw surface with faces
+    // Draw surface with faces (only for non-zero fitness values)
     const faces = [];
     for (let i = 0; i < widthValues.length - 1; i++) {
         for (let j = 0; j < heightValues.length - 1; j++) {
+            // Skip rendering if all corners have zero fitness (not computed)
+            if (fitnessData[i][j] === 0 && fitnessData[i + 1][j] === 0 && 
+                fitnessData[i][j + 1] === 0 && fitnessData[i + 1][j + 1] === 0) {
+                continue;
+            }
+            
             const x = widthValues[i] - 2500;
             const y = heightValues[j] - 2500;
             const x1 = widthValues[i + 1] - 2500;
