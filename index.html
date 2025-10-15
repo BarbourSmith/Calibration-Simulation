@@ -865,7 +865,11 @@ async function findBestRectangularStart(measurements) {
         // Update progress and render incrementally
         if (widthIdx % 5 === 0) {
             const progress = ((widthIdx / widthValues.length) * 100).toFixed(1);
-            searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+            if (bestGuess) {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+            } else {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Searching...`;
+            }
             
             // Render current data
             render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
