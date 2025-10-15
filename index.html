@@ -1562,18 +1562,24 @@ computeEndButton.addEventListener('click', async () => {
     const initialFitness = 1 / evaluatedGuess.fitness;
     
     const messagesBox = document.getElementById('output');
-    messagesBox.value += `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
+    const initialMessage = `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
     
     var startingGuess;
+    var decisionMessage;
     
     // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
     if (initialFitness < 0.1) {
-        messagesBox.value += "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
+        decisionMessage = "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
+        messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // First find the best rectangular starting configuration
+        // Note: findBestRectangularStart will overwrite messagesBox.value, so we prepend our messages after
         startingGuess = await findBestRectangularStart(measurements);
+        // Prepend our initial messages
+        messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
     } else {
-        messagesBox.value += "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         startingGuess = initialGuess;
     }
@@ -1601,18 +1607,24 @@ computeConvergeButton.addEventListener('click', async () => {
     const initialFitness = 1 / evaluatedGuess.fitness;
     
     const messagesBox = document.getElementById('output');
-    messagesBox.value += `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
+    const initialMessage = `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
     
     var startingGuess;
+    var decisionMessage;
     
     // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
     if (initialFitness < 0.1) {
-        messagesBox.value += "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
+        decisionMessage = "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
+        messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // Find the best rectangular starting configuration once
+        // Note: findBestRectangularStart will overwrite messagesBox.value, so we prepend our messages after
         startingGuess = await findBestRectangularStart(measurements);
+        // Prepend our initial messages
+        messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
     } else {
-        messagesBox.value += "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         startingGuess = initialGuess;
     }
