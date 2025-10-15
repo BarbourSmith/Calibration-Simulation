@@ -8,9 +8,53 @@
     <button id="compute-10k-button">10,000x</button>
     <button id="compute-end-button">End</button>
     <button id="compute-converge-button">Converge</button>
+    <br>
+    <label for="grid-spacing">Grid Spacing (mm):</label>
+    <select id="grid-spacing">
+        <option value="1">1mm (ultra fine, very slow)</option>
+        <option value="5">5mm (extremely fine, slow)</option>
+        <option value="10">10mm (very fine)</option>
+        <option value="25">25mm (fine)</option>
+        <option value="50">50mm (medium)</option>
+        <option value="100" selected>100mm (default)</option>
+        <option value="200">200mm (coarse)</option>
+        <option value="500">500mm (very coarse, fastest)</option>
+    </select>
+    
+    <label for="radius-tolerance">Radius Band (mm):</label>
+    <select id="radius-tolerance">
+        <option value="10">±10mm (ultra narrow, fastest)</option>
+        <option value="25">±25mm (extra narrow, very fast)</option>
+        <option value="50">±50mm (very narrow)</option>
+        <option value="100">±100mm (narrow)</option>
+        <option value="150">±150mm (medium)</option>
+        <option value="200">±200mm (wide)</option>
+        <option value="300" selected>±300mm (default)</option>
+        <option value="400">±400mm (very wide)</option>
+        <option value="500">±500mm (widest)</option>
+    </select>
     <style>
         body {
             margin: 0;
+        }
+        #surface-map-canvas {
+            border: 1px solid #333;
+            margin: 10px 0;
+            cursor: move;
+        }
+        #search-info {
+            margin: 10px 0;
+            font-family: monospace;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        .controls button {
+            margin: 0 5px;
+            padding: 5px 10px;
         }
     </style>
     
@@ -27,6 +71,20 @@
 </div>
 
 <div id = "views"></div>
+<div id="search-info" style="display:none;">
+    <h3>Search Space Visualization - Interactive 3D Surface Map</h3>
+    <div class="controls">
+        <button id="rotate-left">← Rotate Left</button>
+        <button id="rotate-right">Rotate Right →</button>
+        <button id="tilt-up">↑ Tilt Up</button>
+        <button id="tilt-down">↓ Tilt Down</button>
+        <button id="zoom-in">+ Zoom In</button>
+        <button id="zoom-out">- Zoom Out</button>
+        <button id="reset-view">Reset View</button>
+    </div>
+    <p id="search-status">Preparing search...</p>
+</div>
+<canvas id="surface-map-canvas" width="1000" height="600" style="display:none;"></canvas>
 <div>
     <textarea id="output" style="width: 1000px;" rows="16"></textarea>
 </div>
@@ -216,7 +274,7 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
  * @param {Object} individual - An object containing the x and y coordinates for each line's starting point.
  * @returns {Object} - An object containing the fitness value and the final positions of each line.
  */
-function magneticallyAttractedLinesFitness(measurement, individual){
+function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing = false){
 
     //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
     if(typeof measurement.tlTheta === 'undefined'){
@@ -261,12 +319,16 @@ function magneticallyAttractedLinesFitness(measurement, individual){
     measurement.TLtension = TL;
     measurement.TRtension = TR;
 
-    drawLines(tlLine, trLine, blLine, brLine, individual);
+    if (!skipDrawing) {
+        drawLines(tlLine, trLine, blLine, brLine, individual);
+    }
 
-    sendCalibrationEvent({
-      finalFitness,
-      tensions: { TL, TR }
-    });
+    if (!skipDrawing) {
+        sendCalibrationEvent({
+          finalFitness,
+          tensions: { TL, TR }
+        });
+    }
 
     return {fitness: finalFitness, lines: {tlLine: tlLine, trLine: trLine, blLine: blLine, brLine: brLine}};
 }
@@ -380,13 +442,13 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
  * @param {Object} lastGuess - The last guess made by the algorithm.
  * @returns {Object} - An object containing the fitness of the guess and the lines used to calculate the fitness.
  */
-function computeLinesFitness(measurements, lastGuess){
+function computeLinesFitness(measurements, lastGuess, skipDrawing = false){
     var fitnesses = [];
     var allLines = [];
     
     //Check each of the measurements against the guess
     measurements.forEach(measurement => {
-        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess);
+        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess, skipDrawing);
         fitnesses.push(fitness);
         allLines.push(lines);
     });
@@ -564,8 +626,6 @@ function printResults(guess){
     let guessString = "Fitness: " + 1/guess.fitness + "(" + guess.tl.x + ", " + guess.tl.y + "), (" + guess.tr.x + ", " + guess.tr.y + ")\n (" + guess.bl.x + ", " + guess.bl.y + "), (" + guess.br.x + ", " + guess.br.y + ")";
     output.value += guessString + "\n";
 
-    console.log(guessString); 
-
 }
 
 /**
@@ -663,6 +723,435 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
     return newMeasurements;
 }
 
+/**
+ * Searches for the best rectangular starting configuration by testing all combinations
+ * of width and height in 100mm increments up to 5000mm.
+ * Assumes bl=(0,0), br.y=0, and rectangular frame (tl.x=0, tl.y=tr.y, br.x=tr.x)
+ * @param {Array} measurements - Array of measurement objects
+ * @returns {Promise<Object>} - Promise that resolves to best guess configuration with highest fitness
+ */
+// 3D Surface Map Visualization State
+let surfaceMapState = {
+    rotationX: -30,
+    rotationY: 45,
+    zoom: 0.15,
+    offsetX: 0,
+    offsetY: 0
+};
+
+async function findBestRectangularStart(measurements) {
+    const messagesBox = document.getElementById('output');
+    const searchInfo = document.getElementById('search-info');
+    const canvas = document.getElementById('surface-map-canvas');
+    const searchStatus = document.getElementById('search-status');
+    
+    // Get user-selected grid spacing
+    const gridSpacingSelect = document.getElementById('grid-spacing');
+    const gridSpacing = parseInt(gridSpacingSelect.value);
+    
+    // Show 3D visualization elements
+    searchInfo.style.display = 'block';
+    canvas.style.display = 'block';
+    
+    messagesBox.value = "Searching for best starting configuration...\n";
+    messagesBox.value += `Using grid spacing: ${gridSpacing}mm\n`;
+    messagesBox.value += "Phase 1: Finding optimal radius along diagonal...\n";
+    searchStatus.textContent = "Phase 1: Scanning diagonal to find optimal radius...";
+    
+    // Deep copy measurements to avoid mutation during search
+    const measurementsCopy = JSON.parse(JSON.stringify(measurements));
+    
+    // PHASE 1: Multi-stage diagonal scan to find optimal radius
+    let diagonalBestFitness = Infinity;
+    let diagonalBestSize = 0;
+    let diagonalResults = [];
+    
+    // Stage 1: Coarse scan at 100mm to quickly find general area
+    messagesBox.value += `\nPhase 1 Stage 1: Coarse diagonal scan (100mm increments)...\n`;
+    searchStatus.textContent = `Phase 1 Stage 1: Coarse diagonal scan (100mm)...`;
+    
+    let coarseBestFitness = Infinity;
+    let coarseBestSize = 0;
+    const coarseSpacing = 100;
+    
+    for (let size = coarseSpacing; size <= 5000; size += coarseSpacing) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        
+        if (result.fitness < coarseBestFitness) {
+            coarseBestFitness = result.fitness;
+            coarseBestSize = size;
+        }
+        
+        // Update progress every 500mm
+        if (size % 500 === 0) {
+            searchStatus.textContent = `Phase 1 Stage 1: Testing ${size}mm - Best: ${coarseBestSize}mm`;
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    }
+    
+    messagesBox.value += `Stage 1 complete: Best at ${coarseBestSize}mm\n`;
+    
+    // Stage 2: Fine scan at user-selected spacing within ±500mm of coarse result
+    messagesBox.value += `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm increments) near ${coarseBestSize}mm...\n`;
+    searchStatus.textContent = `Phase 1 Stage 2: Fine diagonal scan (${gridSpacing}mm)...`;
+    
+    const fineMin = Math.max(gridSpacing, coarseBestSize - 500);
+    const fineMax = Math.min(5000, coarseBestSize + 500);
+    
+    for (let size = fineMin; size <= fineMax; size += gridSpacing) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        const fitnessValue = 1 / result.fitness;
+        diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
+        
+        if (result.fitness < diagonalBestFitness) {
+            diagonalBestFitness = result.fitness;
+            diagonalBestSize = size;
+        }
+        
+        // Update progress periodically
+        const progressInterval = Math.max(gridSpacing * 5, 100);
+        if ((size - fineMin) % progressInterval === 0) {
+            searchStatus.textContent = `Phase 1 Stage 2: Testing ${size}mm - Best: ${diagonalBestSize}mm`;
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    }
+    
+    // Calculate optimal radius (distance from origin to diagonal point)
+    const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
+    // Get user-configured radius tolerance from UI
+    const radiusToleranceSelect = document.getElementById('radius-tolerance');
+    const radiusMargin = parseInt(radiusToleranceSelect.value);
+    
+    messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
+    messagesBox.value += `Phase 2: Testing points within ±${radiusMargin}mm of radius circle...\n`;
+    searchStatus.textContent = `Phase 2: Testing circular band (radius ${optimalRadius.toFixed(0)}mm ±${radiusMargin}mm)...`;
+    
+    // PHASE 2: Search only points within ±radiusMargin of the optimal radius circle
+    let bestGuess = null;
+    let bestFitness = Infinity;
+    let testedCount = 0;
+    
+    // Initialize full grid data structure for visualization
+    const fitnessData = [];
+    const widthValues = [];
+    const heightValues = [];
+    
+    // Pre-populate grid with zeros
+    for (let width = gridSpacing; width <= 5000; width += gridSpacing) {
+        widthValues.push(width);
+    }
+    for (let height = gridSpacing; height <= 5000; height += gridSpacing) {
+        heightValues.push(height);
+    }
+    for (let i = 0; i < widthValues.length; i++) {
+        fitnessData[i] = new Array(heightValues.length).fill(0);
+    }
+    
+    // Test only points within the circular band
+    for (let widthIdx = 0; widthIdx < widthValues.length; widthIdx++) {
+        const width = widthValues[widthIdx];
+        
+        for (let heightIdx = 0; heightIdx < heightValues.length; heightIdx++) {
+            const height = heightValues[heightIdx];
+            
+            // Calculate distance from origin (0,0) to this rectangular frame point
+            const radius = Math.sqrt(width * width + height * height);
+            
+            // Calculate aspect ratio to filter out extreme shapes
+            const aspectRatio = width > height ? width / height : height / width;
+            
+            // Only test if within ±radiusMargin of optimal radius AND aspect ratio <= 3:1
+            if (Math.abs(radius - optimalRadius) <= radiusMargin && aspectRatio <= 3) {
+                const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+                const guess = {
+                    tl: {x: 0, y: height},
+                    tr: {x: width, y: height},
+                    bl: {x: 0, y: 0},
+                    br: {x: width, y: 0},
+                    fitness: 0
+                };
+                
+                const result = computeLinesFitness(testMeasurements, guess, true);
+                const fitnessValue = 1 / result.fitness;
+                fitnessData[widthIdx][heightIdx] = fitnessValue;
+                
+                testedCount++;
+                
+                if (result.fitness < bestFitness) {
+                    bestFitness = result.fitness;
+                    bestGuess = JSON.parse(JSON.stringify(result));
+                }
+            }
+            // else: fitnessData remains 0 for points outside the band
+        }
+        
+        // Update progress and render incrementally
+        if (widthIdx % 5 === 0) {
+            const progress = ((widthIdx / widthValues.length) * 100).toFixed(1);
+            if (bestGuess) {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+            } else {
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Searching...`;
+            }
+            
+            // Render current data
+            render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+            
+            // Yield to browser
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+    
+    // Final render
+    searchStatus.textContent = "Rendering final 3D surface map...";
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    
+    // Setup controls
+    setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} configurations (vs 2500 full search). Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} configurations in circular band (reduced from 2500).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+    
+    return bestGuess;
+}
+
+function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Find min and max fitness for color mapping (excluding zero/uncomputed values)
+    let minFitness = Infinity;
+    let maxFitness = -Infinity;
+    for (let i = 0; i < fitnessData.length; i++) {
+        for (let j = 0; j < fitnessData[i].length; j++) {
+            if (fitnessData[i][j] > 0) {  // Only consider non-zero computed values
+                minFitness = Math.min(minFitness, fitnessData[i][j]);
+                maxFitness = Math.max(maxFitness, fitnessData[i][j]);
+            }
+        }
+    }
+    
+    // Project 3D points to 2D using isometric projection
+    function project3D(x, y, z) {
+        const angleX = surfaceMapState.rotationX * Math.PI / 180;
+        const angleY = surfaceMapState.rotationY * Math.PI / 180;
+        
+        // Rotate around Y axis
+        let x1 = x * Math.cos(angleY) + z * Math.sin(angleY);
+        let z1 = -x * Math.sin(angleY) + z * Math.cos(angleY);
+        let y1 = y;
+        
+        // Rotate around X axis
+        let y2 = y1 * Math.cos(angleX) - z1 * Math.sin(angleX);
+        let z2 = y1 * Math.sin(angleX) + z1 * Math.cos(angleX);
+        let x2 = x1;
+        
+        // Apply zoom and offset
+        const screenX = width / 2 + x2 * surfaceMapState.zoom + surfaceMapState.offsetX;
+        const screenY = height / 2 - y2 * surfaceMapState.zoom + surfaceMapState.offsetY;
+        
+        return { x: screenX, y: screenY, z: z2 };
+    }
+    
+    // Draw surface with faces (only for non-zero fitness values)
+    const faces = [];
+    for (let i = 0; i < widthValues.length - 1; i++) {
+        for (let j = 0; j < heightValues.length - 1; j++) {
+            // Skip rendering if all corners have zero fitness (not computed)
+            if (fitnessData[i][j] === 0 && fitnessData[i + 1][j] === 0 && 
+                fitnessData[i][j + 1] === 0 && fitnessData[i + 1][j + 1] === 0) {
+                continue;
+            }
+            
+            const x = widthValues[i] - 2500;
+            const y = heightValues[j] - 2500;
+            const x1 = widthValues[i + 1] - 2500;
+            const y1 = heightValues[j + 1] - 2500;
+            
+            const z00 = ((fitnessData[i][j] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z10 = ((fitnessData[i + 1][j] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z01 = ((fitnessData[i][j + 1] - minFitness) / (maxFitness - minFitness)) * 1000;
+            const z11 = ((fitnessData[i + 1][j + 1] - minFitness) / (maxFitness - minFitness)) * 1000;
+            
+            const p00 = project3D(x, y, z00);
+            const p10 = project3D(x1, y, z10);
+            const p01 = project3D(x, y1, z01);
+            const p11 = project3D(x1, y1, z11);
+            
+            // Average Z for face sorting
+            const avgZ = (p00.z + p10.z + p01.z + p11.z) / 4;
+            const avgFitness = (fitnessData[i][j] + fitnessData[i + 1][j] + fitnessData[i][j + 1] + fitnessData[i + 1][j + 1]) / 4;
+            const normalized = (avgFitness - minFitness) / (maxFitness - minFitness);
+            
+            faces.push({ p00, p10, p01, p11, avgZ, normalized });
+        }
+    }
+    
+    // Sort faces by Z (painter's algorithm)
+    faces.sort((a, b) => a.avgZ - b.avgZ);
+    
+    // Draw faces
+    for (const face of faces) {
+        // Color gradient from blue (low) to red (high)
+        const hue = (1 - face.normalized) * 240; // 240 = blue, 0 = red
+        const saturation = 80;
+        const lightness = 40 + face.normalized * 30;
+        
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness - 10}%)`;
+        ctx.lineWidth = 0.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(face.p00.x, face.p00.y);
+        ctx.lineTo(face.p10.x, face.p10.y);
+        ctx.lineTo(face.p11.x, face.p11.y);
+        ctx.lineTo(face.p01.x, face.p01.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+    
+    // Mark the best point
+    if (bestGuess) {
+        const bestWidthIndex = widthValues.indexOf(bestGuess.tr.x);
+        const bestHeightIndex = heightValues.indexOf(bestGuess.tr.y);
+        if (bestWidthIndex >= 0 && bestHeightIndex >= 0) {
+            const x = bestGuess.tr.x - 2500;
+            const y = bestGuess.tr.y - 2500;
+            const z = ((fitnessData[bestWidthIndex][bestHeightIndex] - minFitness) / (maxFitness - minFitness)) * 1000 + 50;
+            const p = project3D(x, y, z);
+            
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+    
+    // Draw legend
+    ctx.fillStyle = 'black';
+    ctx.font = '12px monospace';
+    ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
+    ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 40);
+    ctx.fillText('Red Dot = Best Configuration', 10, 60);
+}
+
+function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess) {
+    document.getElementById('rotate-left').onclick = () => {
+        surfaceMapState.rotationY -= 15;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('rotate-right').onclick = () => {
+        surfaceMapState.rotationY += 15;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('tilt-up').onclick = () => {
+        surfaceMapState.rotationX -= 10;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('tilt-down').onclick = () => {
+        surfaceMapState.rotationX += 10;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('zoom-in').onclick = () => {
+        surfaceMapState.zoom *= 1.2;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('zoom-out').onclick = () => {
+        surfaceMapState.zoom /= 1.2;
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    document.getElementById('reset-view').onclick = () => {
+        surfaceMapState = {
+            rotationX: -30,
+            rotationY: 45,
+            zoom: 0.15,
+            offsetX: 0,
+            offsetY: 0
+        };
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+    
+    // Mouse drag to rotate
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    
+    canvas.onmousedown = (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+    };
+    
+    canvas.onmousemove = (e) => {
+        if (isDragging) {
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            surfaceMapState.rotationY += deltaX * 0.5;
+            surfaceMapState.rotationX += deltaY * 0.5;
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+            
+            render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+        }
+    };
+    
+    canvas.onmouseup = () => {
+        isDragging = false;
+    };
+    
+    canvas.onmouseleave = () => {
+        isDragging = false;
+    };
+    
+    // Mouse wheel to zoom
+    canvas.onwheel = (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+            surfaceMapState.zoom *= 1.1;
+        } else {
+            surfaceMapState.zoom /= 1.1;
+        }
+        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+}
+
 function findMaxFitness(initialGuess, measurements) {
     sendCalibrationEvent({
       initialGuess
@@ -695,10 +1184,11 @@ function findMaxFitness(initialGuess, measurements) {
               totalCounter
             });
 
-            console.log("Total Counter: " + totalCounter);
-
             if(totalCounter % 100 == 0){
-                document.getElementById('output').value = "Best Fitness: " + (1/bestGuess.fitness).toFixed(7) + " in " + totalCounter + "\n";
+                const output = document.getElementById('output');
+                // Append update instead of replacing
+                output.value += "Optimization progress: Best fitness " + (1/bestGuess.fitness).toFixed(7) + " after " + totalCounter + " iterations\n";
+                output.scrollTop = output.scrollHeight;
             }
 
             // Schedule the next iteration
@@ -759,15 +1249,13 @@ function findMaxFitness(initialGuess, measurements) {
  */
 function sendCalibrationEvent(dataToSend, log = false) {
   try {
-    if (log) {
-      console.log(JSON.stringify(dataToSend, null, 2));
-    }
     document.body.dispatchEvent(new CustomEvent(CALIBRATION_EVENT_NAME, {
       bubbles: true,
       cancelable: true,
       detail: dataToSend
     }));
   } catch (err) {
+    // Keep console.error for debugging actual errors
     console.error('Unexpected:', err);
   }
 }
@@ -796,7 +1284,6 @@ const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
     clearCanvas();
     initialGuess = computeLinesFitness(measurements, initialGuess);
-    console.log("Fitness: " + 1/initialGuess.fitness);
     printResults(initialGuess);
 });
 
@@ -807,7 +1294,6 @@ compute1kButton.addEventListener('click', () => {
     for(let i = 0; i < 1000; i++){
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
     }
     printResults(initialGuess);
 });
@@ -818,7 +1304,6 @@ compute10kButton.addEventListener('click', () => {
     function loop() {
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
-        console.log("Fitness: " + 1/initialGuess.fitness);
         i++;
         if (i < 10000) {
             requestAnimationFrame(loop);
@@ -831,9 +1316,12 @@ compute10kButton.addEventListener('click', () => {
 
 
 const computeEndButton = document.getElementById('compute-end-button');
-computeEndButton.addEventListener('click', () => {
-    var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
-    var result = findMaxFitness(guessThisTime, measurements);
+computeEndButton.addEventListener('click', async () => {
+    // First find the best rectangular starting configuration
+    var bestRectangularStart = await findBestRectangularStart(measurements);
+    
+    // Use the best rectangular configuration as the starting point for full optimization
+    var result = findMaxFitness(bestRectangularStart, measurements);
 
     printResults(result);
 });
@@ -849,13 +1337,18 @@ computeEndButton.addEventListener('click', () => {
 //     fitness: 0
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
-computeConvergeButton.addEventListener('click', () => {
+computeConvergeButton.addEventListener('click', async () => {
+    // Find the best rectangular starting configuration once
+    var bestRectangularStart = await findBestRectangularStart(measurements);
+    const messagesBox = document.getElementById('output');
+    messagesBox.value += "Using best rectangular start for convergence iterations\n";
+    messagesBox.scrollTop = messagesBox.scrollHeight;
 
     function computeGuess() {
         // Clear the canvas
         clearCanvas();
 
-        var guessThisTime = JSON.parse(JSON.stringify(initialGuess)); //Deep copy to break the reference to the original object so that we can compute fresh
+        var guessThisTime = JSON.parse(JSON.stringify(bestRectangularStart)); //Deep copy to break the reference to the best rectangular start
         //Randomize the initial guess +- 200mm
         guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
         guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
