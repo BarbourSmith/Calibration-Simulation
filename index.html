@@ -11,6 +11,7 @@
     <br>
     <label for="grid-spacing">Grid Spacing (mm):</label>
     <select id="grid-spacing">
+        <option value="0.1">0.1mm (extremely ultra fine, extremely slow)</option>
         <option value="1">1mm (ultra fine, very slow)</option>
         <option value="5">5mm (extremely fine, slow)</option>
         <option value="10">10mm (very fine)</option>
@@ -23,8 +24,11 @@
     
     <label for="radius-tolerance">Radius Band (mm):</label>
     <select id="radius-tolerance">
-        <option value="10">±10mm (ultra narrow, fastest)</option>
-        <option value="25">±25mm (extra narrow, very fast)</option>
+        <option value="0.2">±0.2mm (extremely ultra narrow, fastest)</option>
+        <option value="0.5">±0.5mm (extremely narrow, extremely fast)</option>
+        <option value="1">±1mm (super narrow, super fast)</option>
+        <option value="10">±10mm (ultra narrow, very fast)</option>
+        <option value="25">±25mm (extra narrow, fast)</option>
         <option value="50">±50mm (very narrow)</option>
         <option value="100">±100mm (narrow)</option>
         <option value="150">±150mm (medium)</option>
@@ -748,7 +752,7 @@ async function findBestRectangularStart(measurements) {
     
     // Get user-selected grid spacing
     const gridSpacingSelect = document.getElementById('grid-spacing');
-    const gridSpacing = parseInt(gridSpacingSelect.value);
+    const gridSpacing = parseFloat(gridSpacingSelect.value);
     
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
@@ -841,7 +845,7 @@ async function findBestRectangularStart(measurements) {
     surfaceMapState.optimalRadius = optimalRadius;
     // Get user-configured radius tolerance from UI
     const radiusToleranceSelect = document.getElementById('radius-tolerance');
-    const radiusMargin = parseInt(radiusToleranceSelect.value);
+    const radiusMargin = parseFloat(radiusToleranceSelect.value);
     
     messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
     messagesBox.value += `Phase 2: Testing points within ±${radiusMargin}mm of radius circle...\n`;
