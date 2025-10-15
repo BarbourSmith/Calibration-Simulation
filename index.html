@@ -1243,6 +1243,49 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
         }
     }
     
+    // Draw 3D axes
+    const axisLength = 500;
+    const axisOrigin = { x: -2500, y: -2500, z: 0 };
+    
+    // X axis (Width) - Red
+    const xAxisStart = project3D(axisOrigin.x, axisOrigin.y, axisOrigin.z);
+    const xAxisEnd = project3D(axisOrigin.x + axisLength, axisOrigin.y, axisOrigin.z);
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(xAxisStart.x, xAxisStart.y);
+    ctx.lineTo(xAxisEnd.x, xAxisEnd.y);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('Width (mm)', xAxisEnd.x + 10, xAxisEnd.y);
+    
+    // Y axis (Height) - Green
+    const yAxisStart = project3D(axisOrigin.x, axisOrigin.y, axisOrigin.z);
+    const yAxisEnd = project3D(axisOrigin.x, axisOrigin.y + axisLength, axisOrigin.z);
+    ctx.strokeStyle = 'rgba(0, 180, 0, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(yAxisStart.x, yAxisStart.y);
+    ctx.lineTo(yAxisEnd.x, yAxisEnd.y);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0, 180, 0, 0.8)';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('Height (mm)', yAxisEnd.x + 10, yAxisEnd.y);
+    
+    // Z axis (Fitness) - Blue
+    const zAxisStart = project3D(axisOrigin.x, axisOrigin.y, axisOrigin.z);
+    const zAxisEnd = project3D(axisOrigin.x, axisOrigin.y, axisLength);
+    ctx.strokeStyle = 'rgba(0, 0, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(zAxisStart.x, zAxisStart.y);
+    ctx.lineTo(zAxisEnd.x, zAxisEnd.y);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0, 0, 255, 0.8)';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('Fitness', zAxisEnd.x + 10, zAxisEnd.y);
+    
     // Draw legend
     ctx.fillStyle = 'black';
     ctx.font = '12px monospace';
