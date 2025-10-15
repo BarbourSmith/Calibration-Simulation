@@ -11,9 +11,11 @@
     <br>
     <label for="arc-spacing">Arc Spacing (mm):</label>
     <select id="arc-spacing">
-        <option value="10">10mm (ultra fine, very slow)</option>
-        <option value="25">25mm (extremely fine, slow)</option>
-        <option value="50">50mm (very fine)</option>
+        <option value="1">1mm (ultra fine, very slow)</option>
+        <option value="5">5mm (extremely fine, slow)</option>
+        <option value="10">10mm (very fine)</option>
+        <option value="25">25mm (fine)</option>
+        <option value="50">50mm (medium)</option>
         <option value="100" selected>100mm (default)</option>
         <option value="200">200mm (coarse)</option>
         <option value="300">300mm (very coarse, fastest)</option>
@@ -884,10 +886,11 @@ async function findBestRectangularStart(measurements) {
         const result = computeLinesFitness(testMeasurements, guess, true);
         const fitnessValue = 1 / result.fitness;
         
-        // Update fitness data for visualization (find closest grid point)
-        const widthIdx = widthValues.findIndex(w => Math.abs(w - width) < 50);
-        const heightIdx = heightValues.findIndex(h => Math.abs(h - height) < 50);
-        if (widthIdx >= 0 && heightIdx >= 0) {
+        // Update fitness data for visualization (map to nearest grid point)
+        // Find the closest grid indices by rounding to nearest 100mm grid point
+        const widthIdx = Math.round(width / 100) - 1; // -1 because grid starts at 100
+        const heightIdx = Math.round(height / 100) - 1;
+        if (widthIdx >= 0 && widthIdx < widthValues.length && heightIdx >= 0 && heightIdx < heightValues.length) {
             fitnessData[widthIdx][heightIdx] = Math.max(fitnessData[widthIdx][heightIdx], fitnessValue);
         }
         
