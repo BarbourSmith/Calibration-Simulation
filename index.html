@@ -736,7 +736,8 @@ let surfaceMapState = {
     rotationY: 45,
     zoom: 0.15,
     offsetX: 0,
-    offsetY: 0
+    offsetY: 0,
+    optimalRadius: null
 };
 
 async function findBestRectangularStart(measurements) {
@@ -836,6 +837,8 @@ async function findBestRectangularStart(measurements) {
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
+    // Store in global state for visualization
+    surfaceMapState.optimalRadius = optimalRadius;
     // Get user-configured radius tolerance from UI
     const radiusToleranceSelect = document.getElementById('radius-tolerance');
     const radiusMargin = parseInt(radiusToleranceSelect.value);
@@ -1063,6 +1066,9 @@ function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGue
     ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
     ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 40);
     ctx.fillText('Red Dot = Best Configuration', 10, 60);
+    if (surfaceMapState.optimalRadius !== null) {
+        ctx.fillText(`Arc Radius: ${surfaceMapState.optimalRadius.toFixed(0)}mm`, 10, 80);
+    }
 }
 
 function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess) {
@@ -1097,12 +1103,14 @@ function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues,
     };
     
     document.getElementById('reset-view').onclick = () => {
+        const currentRadius = surfaceMapState.optimalRadius;
         surfaceMapState = {
             rotationX: -30,
             rotationY: 45,
             zoom: 0.15,
             offsetX: 0,
-            offsetY: 0
+            offsetY: 0,
+            optimalRadius: currentRadius
         };
         render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
     };
