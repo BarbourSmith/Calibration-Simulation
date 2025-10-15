@@ -1566,16 +1566,16 @@ computeEndButton.addEventListener('click', async () => {
     
     var startingGuess;
     
-    // Only use rectangular optimization if initial fitness is less than 0.1
+    // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
     if (initialFitness < 0.1) {
-        messagesBox.value += "Initial fitness < 0.1, skipping rectangular optimization and using initial guess directly.\n";
-        messagesBox.scrollTop = messagesBox.scrollHeight;
-        startingGuess = initialGuess;
-    } else {
-        messagesBox.value += "Initial fitness >= 0.1, running rectangular optimization to find better starting point.\n";
+        messagesBox.value += "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // First find the best rectangular starting configuration
         startingGuess = await findBestRectangularStart(measurements);
+    } else {
+        messagesBox.value += "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        startingGuess = initialGuess;
     }
     
     // Use the starting guess for full optimization
@@ -1605,16 +1605,16 @@ computeConvergeButton.addEventListener('click', async () => {
     
     var startingGuess;
     
-    // Only use rectangular optimization if initial fitness is less than 0.1
+    // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
     if (initialFitness < 0.1) {
-        messagesBox.value += "Initial fitness < 0.1, skipping rectangular optimization and using initial guess directly.\n";
-        messagesBox.scrollTop = messagesBox.scrollHeight;
-        startingGuess = initialGuess;
-    } else {
-        messagesBox.value += "Initial fitness >= 0.1, running rectangular optimization to find better starting point.\n";
+        messagesBox.value += "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // Find the best rectangular starting configuration once
         startingGuess = await findBestRectangularStart(measurements);
+    } else {
+        messagesBox.value += "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        startingGuess = initialGuess;
     }
     
     messagesBox.value += "Using best start for convergence iterations\n";
