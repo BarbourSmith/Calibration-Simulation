@@ -834,21 +834,8 @@ async function findBestRectangularStart(measurements) {
     let bestFitness = Infinity;
     let testedCount = 0;
     
-    // Initialize visualization data structure
-    const fitnessData = [];
-    const widthValues = [];
-    const heightValues = [];
-    
-    // Pre-populate grid for visualization (we'll fill in tested points)
-    for (let width = 100; width <= 5000; width += 100) {
-        widthValues.push(width);
-    }
-    for (let height = 100; height <= 5000; height += 100) {
-        heightValues.push(height);
-    }
-    for (let i = 0; i < widthValues.length; i++) {
-        fitnessData[i] = new Array(heightValues.length).fill(0);
-    }
+    // Store tested points directly (no grid)
+    const testedPoints = [];
     
     // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
     // We limit to angles where aspect ratio <= 3:1
@@ -867,8 +854,8 @@ async function findBestRectangularStart(measurements) {
         // Calculate rectangular frame dimensions from polar coordinates
         // For a rectangular frame with corners at (0,0), (width,0), (0,height), (width,height)
         // The top-right corner (width, height) is at distance 'optimalRadius' from origin
-        const width = Math.round(optimalRadius * Math.cos(angleRad));
-        const height = Math.round(optimalRadius * Math.sin(angleRad));
+        const width = optimalRadius * Math.cos(angleRad);
+        const height = optimalRadius * Math.sin(angleRad);
         
         // Skip invalid dimensions
         if (width <= 0 || height <= 0) continue;
@@ -886,13 +873,13 @@ async function findBestRectangularStart(measurements) {
         const result = computeLinesFitness(testMeasurements, guess, true);
         const fitnessValue = 1 / result.fitness;
         
-        // Update fitness data for visualization (map to nearest grid point)
-        // Find the closest grid indices by rounding to nearest 100mm grid point
-        const widthIdx = Math.round(width / 100) - 1; // -1 because grid starts at 100
-        const heightIdx = Math.round(height / 100) - 1;
-        if (widthIdx >= 0 && widthIdx < widthValues.length && heightIdx >= 0 && heightIdx < heightValues.length) {
-            fitnessData[widthIdx][heightIdx] = Math.max(fitnessData[widthIdx][heightIdx], fitnessValue);
-        }
+        // Store the tested point directly (no grid mapping)
+        testedPoints.push({
+            width: width,
+            height: height,
+            fitness: fitnessValue,
+            rawFitness: result.fitness
+        });
         
         testedCount++;
         angleCount++;
@@ -906,13 +893,13 @@ async function findBestRectangularStart(measurements) {
         if (angleCount % 5 === 0 || angleCount === totalAngles) {
             const progress = ((angleCount / totalAngles) * 100).toFixed(1);
             if (bestGuess) {
-                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+                searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
             } else {
                 searchStatus.textContent = `Phase 2: ${progress}% complete (${testedCount} tested) - Searching...`;
             }
             
             // Render current data
-            render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+            render3DSurfaceArc(canvas, testedPoints, bestGuess);
             await new Promise(resolve => setTimeout(resolve, 10));
         }
     }
@@ -921,13 +908,13 @@ async function findBestRectangularStart(measurements) {
     searchStatus.textContent = "Rendering final 3D surface map...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    render3DSurfaceArc(canvas, testedPoints, bestGuess);
     
     // Setup controls
-    setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points along arc. Best: ${bestGuess.tr.x}x${bestGuess.tr.y}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points along arc at ${arcSpacing}mm spacing.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x}mm\n  Height: ${bestGuess.tr.y}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points along arc. Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points along arc at ${arcSpacing}mm spacing.\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
@@ -1146,6 +1133,208 @@ function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues,
             surfaceMapState.zoom /= 1.1;
         }
         render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
+    };
+}
+
+function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, width, height);
+    
+    if (testedPoints.length === 0) return;
+    
+    // Find min and max fitness for color mapping
+    let minFitness = Infinity;
+    let maxFitness = -Infinity;
+    for (const point of testedPoints) {
+        minFitness = Math.min(minFitness, point.fitness);
+        maxFitness = Math.max(maxFitness, point.fitness);
+    }
+    
+    // Project 3D points to 2D using isometric projection
+    function project3D(x, y, z) {
+        const angleX = surfaceMapState.rotationX * Math.PI / 180;
+        const angleY = surfaceMapState.rotationY * Math.PI / 180;
+        
+        // Rotate around Y axis
+        let x1 = x * Math.cos(angleY) + z * Math.sin(angleY);
+        let z1 = -x * Math.sin(angleY) + z * Math.cos(angleY);
+        let y1 = y;
+        
+        // Rotate around X axis
+        let y2 = y1 * Math.cos(angleX) - z1 * Math.sin(angleX);
+        let z2 = y1 * Math.sin(angleX) + z1 * Math.cos(angleX);
+        let x2 = x1;
+        
+        // Apply zoom and offset
+        const screenX = width / 2 + x2 * surfaceMapState.zoom + surfaceMapState.offsetX;
+        const screenY = height / 2 - y2 * surfaceMapState.zoom + surfaceMapState.offsetY;
+        
+        return { x: screenX, y: screenY, z: z2 };
+    }
+    
+    // Project all points and sort by Z for proper rendering order
+    const projectedPoints = testedPoints.map(point => {
+        const x = point.width - 2500;
+        const y = point.height - 2500;
+        const z = ((point.fitness - minFitness) / (maxFitness - minFitness)) * 1000;
+        const projected = project3D(x, y, z);
+        const normalized = (point.fitness - minFitness) / (maxFitness - minFitness);
+        return { ...projected, normalized, originalPoint: point };
+    });
+    
+    // Sort by Z depth (painter's algorithm)
+    projectedPoints.sort((a, b) => a.z - b.z);
+    
+    // Draw points as circles
+    for (const point of projectedPoints) {
+        // Color gradient from blue (low) to red (high)
+        const hue = (1 - point.normalized) * 240; // 240 = blue, 0 = red
+        const saturation = 80;
+        const lightness = 40 + point.normalized * 30;
+        
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness - 10}%)`;
+        ctx.lineWidth = 1;
+        
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+    }
+    
+    // Draw connecting lines between adjacent points on the arc to show the curve
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < projectedPoints.length; i++) {
+        const point = projectedPoints[i];
+        if (i === 0) {
+            ctx.moveTo(point.x, point.y);
+        } else {
+            ctx.lineTo(point.x, point.y);
+        }
+    }
+    ctx.stroke();
+    
+    // Mark the best point
+    if (bestGuess) {
+        const bestPoint = testedPoints.find(p => 
+            Math.abs(p.width - bestGuess.tr.x) < 0.1 && 
+            Math.abs(p.height - bestGuess.tr.y) < 0.1
+        );
+        if (bestPoint) {
+            const x = bestPoint.width - 2500;
+            const y = bestPoint.height - 2500;
+            const z = ((bestPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 50;
+            const p = project3D(x, y, z);
+            
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+    
+    // Draw legend
+    ctx.fillStyle = 'black';
+    ctx.font = '12px monospace';
+    ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
+    ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 35);
+    ctx.fillText('Red Dot = Best Configuration', 10, 50);
+}
+
+function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
+    document.getElementById('rotate-left').onclick = () => {
+        surfaceMapState.rotationY -= 15;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('rotate-right').onclick = () => {
+        surfaceMapState.rotationY += 15;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('tilt-up').onclick = () => {
+        surfaceMapState.rotationX -= 10;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('tilt-down').onclick = () => {
+        surfaceMapState.rotationX += 10;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('zoom-in').onclick = () => {
+        surfaceMapState.zoom *= 1.2;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('zoom-out').onclick = () => {
+        surfaceMapState.zoom /= 1.2;
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    document.getElementById('reset-view').onclick = () => {
+        surfaceMapState = {
+            rotationX: -30,
+            rotationY: 45,
+            zoom: 0.15,
+            offsetX: 0,
+            offsetY: 0
+        };
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+    
+    // Mouse drag to rotate
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    
+    canvas.onmousedown = (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+    };
+    
+    canvas.onmousemove = (e) => {
+        if (isDragging) {
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            surfaceMapState.rotationY += deltaX * 0.5;
+            surfaceMapState.rotationX += deltaY * 0.5;
+            
+            lastX = e.clientX;
+            lastY = e.clientY;
+            
+            render3DSurfaceArc(canvas, testedPoints, bestGuess);
+        }
+    };
+    
+    canvas.onmouseup = () => {
+        isDragging = false;
+    };
+    
+    canvas.onmouseleave = () => {
+        isDragging = false;
+    };
+    
+    // Mouse wheel to zoom
+    canvas.onwheel = (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+            surfaceMapState.zoom *= 1.1;
+        } else {
+            surfaceMapState.zoom /= 1.1;
+        }
+        render3DSurfaceArc(canvas, testedPoints, bestGuess);
     };
 }
 
