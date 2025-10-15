@@ -11,7 +11,9 @@
     <br>
     <label for="grid-spacing">Grid Spacing (mm):</label>
     <select id="grid-spacing">
-        <option value="10">10mm (very fine, slowest)</option>
+        <option value="1">1mm (ultra fine, very slow)</option>
+        <option value="5">5mm (extremely fine, slow)</option>
+        <option value="10">10mm (very fine)</option>
         <option value="25">25mm (fine)</option>
         <option value="50">50mm (medium)</option>
         <option value="100" selected>100mm (default)</option>
@@ -21,7 +23,9 @@
     
     <label for="radius-tolerance">Radius Band (mm):</label>
     <select id="radius-tolerance">
-        <option value="50">±50mm (very narrow, fastest)</option>
+        <option value="10">±10mm (ultra narrow, fastest)</option>
+        <option value="25">±25mm (extra narrow, very fast)</option>
+        <option value="50">±50mm (very narrow)</option>
         <option value="100">±100mm (narrow)</option>
         <option value="150">±150mm (medium)</option>
         <option value="200">±200mm (wide)</option>
@@ -830,8 +834,11 @@ async function findBestRectangularStart(measurements) {
             // Calculate distance from origin (0,0) to this rectangular frame point
             const radius = Math.sqrt(width * width + height * height);
             
-            // Only test if within ±radiusMargin of optimal radius
-            if (Math.abs(radius - optimalRadius) <= radiusMargin) {
+            // Calculate aspect ratio
+            const aspectRatio = width > height ? width / height : height / width;
+            
+            // Only test if within ±radiusMargin of optimal radius AND aspect ratio is 3:1 or less
+            if (Math.abs(radius - optimalRadius) <= radiusMargin && aspectRatio <= 3) {
                 const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
                 const guess = {
                     tl: {x: 0, y: height},
