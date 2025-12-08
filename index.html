@@ -400,23 +400,18 @@ function computeFurthestFromCenterOfMass(lines, lastGuess){
     //Move the corner that is the furthest off in the direction needed
     var scalor = -1;
     if(maxError == Math.abs(tlX)){
-        //console.log("Move tlY by: " + tlY/divisor);
         lastGuess.tl.x = lastGuess.tl.x + tlX*scalor;
     }
     if(maxError == Math.abs(tlY)){
-        //console.log("Move tlY by: " + tlY/divisor);
         lastGuess.tl.y = lastGuess.tl.y + tlY*scalor;
     }
     else if(maxError == Math.abs(trX)){
-        //console.log("Move trX by: " + trX/divisor);
         lastGuess.tr.x = lastGuess.tr.x + trX*scalor;
     }
     else if(maxError == Math.abs(trY)){
-        //console.log("Move trY by: " + trY/divisor);
         lastGuess.tr.y = lastGuess.tr.y + trY*scalor;
     }
     else if(maxError == Math.abs(brX)){
-        //console.log("Move brX by: " + brX/divisor);
         lastGuess.br.x = lastGuess.br.x + brX*scalor;
     }
     
@@ -1410,34 +1405,82 @@ function findMaxFitness(initialGuess, measurements) {
     let currentGuess = JSON.parse(JSON.stringify(initialGuess));
     let stagnantCounter = 0;
     let totalCounter = 0;
+    let restartCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
+    var globalBestGuess = JSON.parse(JSON.stringify(initialGuess));
+    
+    // Simulated annealing parameters for escaping local minima
+    let temperature = 0.5; // Start with lower temperature
+    const coolingRate = 0.999; // Slower cooling for more exploration
 
     function iterate() {
-        if (stagnantCounter < 100 && totalCounter < 200000) {
+        // Increased stagnant limit and using multiple restarts
+        if (stagnantCounter < 500 && totalCounter < 200000 && restartCounter < 10) {
             //Clear the canvass
             clearCanvas();
 
             currentGuess = computeLinesFitness(measurements, currentGuess);
             
-            if (1/currentGuess.fitness > 1/bestGuess.fitness) {
+            // Calculate fitness improvement
+            const currentFitness = 1/currentGuess.fitness;
+            const bestFitness = 1/bestGuess.fitness;
+            const improvement = currentFitness - bestFitness;
+            
+            // Accept improvements, or occasionally accept worse solutions early on
+            // Simulated annealing: accept worse solutions with decreasing probability
+            const acceptWorse = improvement < 0 && temperature > 0.01 && Math.random() < Math.exp(improvement * 10 / temperature);
+            
+            if (improvement > 0 || acceptWorse) {
                 bestGuess = JSON.parse(JSON.stringify(currentGuess));
-                stagnantCounter = 0;
+                
+                if (improvement > 0) {
+                    stagnantCounter = 0;
+                    
+                    // Update global best if we found a better solution
+                    if (currentFitness > 1/globalBestGuess.fitness) {
+                        globalBestGuess = JSON.parse(JSON.stringify(currentGuess));
+                    }
+                }
             } else {
                 stagnantCounter++;
             }
+            
+            // Cool down temperature
+            temperature *= coolingRate;
             totalCounter++;
+            
+            // Restart from best solution with perturbation if stuck for too long
+            if (stagnantCounter >= 400) {
+                const perturbationSize = 30; // Smaller perturbations for fine-tuning
+                currentGuess = JSON.parse(JSON.stringify(globalBestGuess));
+                
+                // Add random perturbations to explore nearby solutions
+                currentGuess.tl.x += (Math.random() - 0.5) * perturbationSize;
+                currentGuess.tl.y += (Math.random() - 0.5) * perturbationSize;
+                currentGuess.tr.x += (Math.random() - 0.5) * perturbationSize;
+                currentGuess.tr.y += (Math.random() - 0.5) * perturbationSize;
+                currentGuess.br.x += (Math.random() - 0.5) * perturbationSize;
+                
+                bestGuess = JSON.parse(JSON.stringify(currentGuess));
+                stagnantCounter = 0;
+                restartCounter++;
+                temperature = 0.3; // Reset with lower temperature
+                
+                const output = document.getElementById('output');
+                output.value += `Restart ${restartCounter}/10: Perturbing from best solution (fitness: ${(1/globalBestGuess.fitness).toFixed(7)})...\n`;
+                output.scrollTop = output.scrollHeight;
+            }
             
             sendCalibrationEvent({
               final: false,
               guess: currentGuess,
-              bestGuess: bestGuess,
+              bestGuess: globalBestGuess,
               totalCounter
             });
 
             if(totalCounter % 100 == 0){
                 const output = document.getElementById('output');
-                // Append update instead of replacing
-                output.value += "Optimization progress: Best fitness " + (1/bestGuess.fitness).toFixed(7) + " after " + totalCounter + " iterations\n";
+                output.value += "Optimization progress: Best fitness " + (1/globalBestGuess.fitness).toFixed(7) + " after " + totalCounter + " iterations\n";
                 output.scrollTop = output.scrollHeight;
             }
 
@@ -1445,6 +1488,8 @@ function findMaxFitness(initialGuess, measurements) {
             setTimeout(iterate, 0);
         }
         else{
+            // Use global best instead of local best
+            bestGuess = globalBestGuess;
             messagesBox = document.getElementById('output');
 
             if(1/bestGuess.fitness < acceptableCalibrationThreshold){
