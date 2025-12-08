@@ -105,6 +105,18 @@ const trueBRY = 0;
 *------------------------------------------------------------------------------
 */
 
+// Cache for storing theta values to avoid mutating measurement objects
+// This ensures consistent results when running the algorithm multiple times with the same data
+var thetaCache = new Map();
+
+/**
+ * Resets the theta cache to ensure consistent starting conditions for calibration runs.
+ * Call this before starting a new calibration to ensure deterministic results.
+ */
+function resetThetaCache() {
+    thetaCache.clear();
+}
+
 
 /**
  * Simulates a measurement at a given location with random and constant errors.
@@ -248,30 +260,30 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
  * Computes the fitness of a set of lines based on how close their endpoints are to each other.
  * @param {Object} measurement - An object containing the initial theta values and lengths for each line.
  * @param {Object} individual - An object containing the x and y coordinates for each line's starting point.
+ * @param {number} measurementIndex - The index of this measurement in the measurements array (for theta caching).
  * @returns {Object} - An object containing the fitness value and the final positions of each line.
  */
-function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing = false){
+function magneticallyAttractedLinesFitness(measurement, individual, measurementIndex, skipDrawing = false){
 
-    //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
-    if(typeof measurement.tlTheta === 'undefined'){
-        measurement.tlTheta = -.3;
+    //Get or initialize theta values from cache instead of mutating measurement object
+    //This ensures consistent results when running the algorithm multiple times
+    const cacheKey = `m${measurementIndex}`;
+    if(!thetaCache.has(cacheKey)){
+        thetaCache.set(cacheKey, {
+            tlTheta: -.3,
+            trTheta: 3.5,
+            blTheta: .5,
+            brTheta: 2.6
+        });
     }
-    if(typeof measurement.trTheta === 'undefined'){
-        measurement.trTheta = 3.5;
-    }
-    if(typeof measurement.blTheta === 'undefined'){
-        measurement.blTheta = .5;
-    }
-    if(typeof measurement.brTheta === 'undefined'){
-        measurement.brTheta = 2.6;
-    }
+    const thetaValues = thetaCache.get(cacheKey);
 
 
     //Define the four lines with starting points and lengths
-    var tlLine = computeLineEndPoint({xBegin: individual.tl.x, yBegin: individual.tl.y, theta: measurement.tlTheta, length: measurement.tl});
-    var trLine = computeLineEndPoint({xBegin: individual.tr.x, yBegin: individual.tr.y, theta: measurement.trTheta, length: measurement.tr});
-    var blLine = computeLineEndPoint({xBegin: individual.bl.x, yBegin: individual.bl.y, theta: measurement.blTheta, length: measurement.bl});
-    var brLine = computeLineEndPoint({xBegin: individual.br.x, yBegin: individual.br.y, theta: measurement.brTheta, length: measurement.br});
+    var tlLine = computeLineEndPoint({xBegin: individual.tl.x, yBegin: individual.tl.y, theta: thetaValues.tlTheta, length: measurement.tl});
+    var trLine = computeLineEndPoint({xBegin: individual.tr.x, yBegin: individual.tr.y, theta: thetaValues.trTheta, length: measurement.tr});
+    var blLine = computeLineEndPoint({xBegin: individual.bl.x, yBegin: individual.bl.y, theta: thetaValues.blTheta, length: measurement.bl});
+    var brLine = computeLineEndPoint({xBegin: individual.br.x, yBegin: individual.br.y, theta: thetaValues.brTheta, length: measurement.br});
 
     var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .1);
     var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .01);
@@ -282,18 +294,17 @@ function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing 
     var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .0000001);
     var {tlLine, trLine, blLine, brLine} = walkLines(tlLine, trLine, blLine, brLine, .00000001);
 
-    measurement.tlTheta = tlLine.theta;
-    measurement.trTheta = trLine.theta;
-    measurement.blTheta = blLine.theta;
-    measurement.brTheta = brLine.theta;
+    //Update cached theta values instead of mutating measurement object
+    thetaValues.tlTheta = tlLine.theta;
+    thetaValues.trTheta = trLine.theta;
+    thetaValues.blTheta = blLine.theta;
+    thetaValues.brTheta = brLine.theta;
 
     //Compute the final fitness
     const finalFitness = computeEndpointFitness(tlLine, trLine, blLine, brLine);
 
     //Compute the tension in the two upper belts
     const { TL, TR } = calculateTensions(tlLine.xEnd, tlLine.yEnd, individual);
-    measurement.TLtension = TL;
-    measurement.TRtension = TR;
 
     if (!skipDrawing) {
         drawLines(tlLine, trLine, blLine, brLine, individual);
@@ -423,8 +434,8 @@ function computeLinesFitness(measurements, lastGuess, skipDrawing = false){
     var allLines = [];
     
     //Check each of the measurements against the guess
-    measurements.forEach(measurement => {
-        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess, skipDrawing);
+    measurements.forEach((measurement, index) => {
+        const {fitness, lines} = magneticallyAttractedLinesFitness(measurement, lastGuess, index, skipDrawing);
         fitnesses.push(fitness);
         allLines.push(lines);
     });
@@ -1521,6 +1532,8 @@ function clearCanvas() {
 // Computes the fitness of the next single step
 const computeButton = document.getElementById('compute-button');
 computeButton.addEventListener('click', () => {
+    // Reset theta cache for consistent results when clicking the button multiple times
+    resetThetaCache();
     clearCanvas();
     initialGuess = computeLinesFitness(measurements, initialGuess);
     printResults(initialGuess);
@@ -1530,6 +1543,8 @@ computeButton.addEventListener('click', () => {
 //Create the buttons that the user can click
 const compute1kButton = document.getElementById('compute-1k-button');
 compute1kButton.addEventListener('click', () => {
+    // Reset theta cache for consistent results when clicking the button multiple times
+    resetThetaCache();
     for(let i = 0; i < 1000; i++){
         clearCanvas();
         initialGuess = computeLinesFitness(measurements, initialGuess);
@@ -1539,6 +1554,8 @@ compute1kButton.addEventListener('click', () => {
 
 const compute10kButton = document.getElementById('compute-10k-button');
 compute10kButton.addEventListener('click', () => {
+    // Reset theta cache for consistent results when clicking the button multiple times
+    resetThetaCache();
     let i = 0;
     function loop() {
         clearCanvas();
@@ -1556,6 +1573,9 @@ compute10kButton.addEventListener('click', () => {
 
 const computeEndButton = document.getElementById('compute-end-button');
 computeEndButton.addEventListener('click', async () => {
+    // Reset theta cache for consistent results when clicking the button multiple times
+    resetThetaCache();
+    
     // Evaluate the fitness of the initial guess
     const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
     const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
@@ -1599,6 +1619,10 @@ computeEndButton.addEventListener('click', async () => {
 //     br: {x: 3655.96, y: 0},
 //     fitness: 0
 // }
+
+// NOTE: The "Converge" button intentionally uses randomization to explore multiple starting points.
+// This helps find the global optimum by repeatedly trying different initial guesses.
+// If you need deterministic results, use the "End" button instead.
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
     // Evaluate the fitness of the initial guess
@@ -1630,14 +1654,18 @@ computeConvergeButton.addEventListener('click', async () => {
     }
     
     messagesBox.value += "Using best start for convergence iterations\n";
+    messagesBox.value += "NOTE: This mode uses randomization to explore different starting points. Results will vary between runs.\n";
     messagesBox.scrollTop = messagesBox.scrollHeight;
 
     function computeGuess() {
+        // Reset theta cache for each randomized run to ensure proper convergence
+        resetThetaCache();
+        
         // Clear the canvas
         clearCanvas();
 
         var guessThisTime = JSON.parse(JSON.stringify(startingGuess)); //Deep copy to break the reference to the starting guess
-        //Randomize the initial guess +- 200mm
+        //Randomize the initial guess +- 200mm to explore different starting points
         guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
         guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
         guessThisTime.tr.x = guessThisTime.tr.x + (Math.random() * 400) - 200;
