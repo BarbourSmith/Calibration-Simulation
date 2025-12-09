@@ -1811,15 +1811,11 @@ window.onload = function() {
             // Start with a fresh copy of raw measurements
             let adjustedMeasurements = JSON.parse(JSON.stringify(rawMeasurements));
             
-            // Apply scale if it's not 1.0
-            if (scale !== 1.0) {
-                adjustedMeasurements = scaleMeasurements(adjustedMeasurements, scale);
-            }
+            // Apply scale (unconditionally to avoid floating-point comparison issues)
+            adjustedMeasurements = scaleMeasurements(adjustedMeasurements, scale);
             
-            // Apply offset if it's not 0
-            if (offset !== 0) {
-                adjustedMeasurements = offsetMeasurements(adjustedMeasurements, offset);
-            }
+            // Apply offset (unconditionally to avoid floating-point comparison issues)
+            adjustedMeasurements = offsetMeasurements(adjustedMeasurements, offset);
             
             // Apply projection
             measurements = projectMeasurements(adjustedMeasurements);
