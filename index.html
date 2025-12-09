@@ -243,6 +243,12 @@
 
         <div class="section">
             <h3>Optimization Controls</h3>
+            <div style="margin-bottom: 15px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="use-rectangular-approximation" checked style="margin-right: 8px; cursor: pointer; width: auto;">
+                    Use rectangular approximation for poor initial guesses (fitness < 0.1)
+                </label>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -1658,11 +1664,14 @@ computeConvergeButton.addEventListener('click', async () => {
     const messagesBox = document.getElementById('output');
     const initialMessage = `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
     
+    // Check if rectangular approximation is enabled
+    const useRectangularApproximation = document.getElementById('use-rectangular-approximation').checked;
+    
     var startingGuess;
     var decisionMessage;
     
-    // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
-    if (initialFitness < 0.1) {
+    // Only use rectangular optimization if toggle is enabled AND initial fitness is less than 0.1 (poor guess)
+    if (useRectangularApproximation && initialFitness < 0.1) {
         decisionMessage = "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
         messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
@@ -1672,7 +1681,11 @@ computeConvergeButton.addEventListener('click', async () => {
         // Prepend our initial messages
         messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
     } else {
-        decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        if (!useRectangularApproximation) {
+            decisionMessage = "Rectangular approximation is disabled, using initial anchor points directly.\n";
+        } else {
+            decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        }
         messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         startingGuess = initialGuess;
