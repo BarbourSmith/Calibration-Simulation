@@ -212,20 +212,8 @@
                     <input type="number" id="try-input" value="2500" step="0.1">
                 </div>
                 <div class="input-field">
-                    <label for="blx-input">Bottom Left X (mm)</label>
-                    <input type="number" id="blx-input" value="0" step="0.1">
-                </div>
-                <div class="input-field">
-                    <label for="bly-input">Bottom Left Y (mm)</label>
-                    <input type="number" id="bly-input" value="0" step="0.1">
-                </div>
-                <div class="input-field">
                     <label for="brx-input">Bottom Right X (mm)</label>
                     <input type="number" id="brx-input" value="3600" step="0.1">
-                </div>
-                <div class="input-field">
-                    <label for="bry-input">Bottom Right Y (mm)</label>
-                    <input type="number" id="bry-input" value="0" step="0.1">
                 </div>
             </div>
             <div class="button-group">
@@ -1720,15 +1708,13 @@ window.onload = function() {
     output.value = "";
     
     // Function to sync input fields with initialGuess
+    // Note: BLX, BLY, and BRY are fixed at 0 and have no input fields
     function syncInputFields() {
         document.getElementById('tlx-input').value = initialGuess.tl.x.toFixed(1);
         document.getElementById('tly-input').value = initialGuess.tl.y.toFixed(1);
         document.getElementById('trx-input').value = initialGuess.tr.x.toFixed(1);
         document.getElementById('try-input').value = initialGuess.tr.y.toFixed(1);
-        document.getElementById('blx-input').value = initialGuess.bl.x.toFixed(1);
-        document.getElementById('bly-input').value = initialGuess.bl.y.toFixed(1);
         document.getElementById('brx-input').value = initialGuess.br.x.toFixed(1);
-        document.getElementById('bry-input').value = initialGuess.br.y.toFixed(1);
     }
     
     // Initialize input fields with current values
@@ -1776,14 +1762,15 @@ window.onload = function() {
             const tly = parseFloat(document.getElementById('tly-input').value);
             const trx = parseFloat(document.getElementById('trx-input').value);
             const tryVal = parseFloat(document.getElementById('try-input').value);
-            const blx = parseFloat(document.getElementById('blx-input').value);
-            const bly = parseFloat(document.getElementById('bly-input').value);
             const brx = parseFloat(document.getElementById('brx-input').value);
-            const bry = parseFloat(document.getElementById('bry-input').value);
+            
+            // Note: BLX, BLY, and BRY are fixed at 0 (bottom-left origin)
+            const blx = 0;
+            const bly = 0;
+            const bry = 0;
             
             // Validate that all values are numbers
-            if (isNaN(tlx) || isNaN(tly) || isNaN(trx) || isNaN(tryVal) || 
-                isNaN(blx) || isNaN(bly) || isNaN(brx) || isNaN(bry)) {
+            if (isNaN(tlx) || isNaN(tly) || isNaN(trx) || isNaN(tryVal) || isNaN(brx)) {
                 statusSpan.textContent = '✗ All fields must contain valid numbers';
                 statusSpan.style.color = 'red';
                 return;
@@ -1831,9 +1818,10 @@ window.onload = function() {
             const randomWidth = minWidth + Math.random() * (maxWidth - minWidth);
             const randomHeight = minHeight + Math.random() * (maxHeight - minHeight);
             
-            // Set bottom left corner at origin (standard configuration)
+            // Note: BLX, BLY, and BRY are fixed at 0 (bottom-left origin)
             const blx = 0;
             const bly = 0;
+            const bry = 0;
             
             // Set other corners based on random dimensions with slight variations
             const tlx = blx + (Math.random() * 40 - 20); // Small variation around 0
@@ -1841,17 +1829,13 @@ window.onload = function() {
             const trx = randomWidth;
             const tryVal = randomHeight + (Math.random() * 40 - 20); // Small variation
             const brx = randomWidth + (Math.random() * 40 - 20); // Small variation
-            const bry = bly + (Math.random() * 40 - 20); // Small variation around 0
             
-            // Update input fields
+            // Update input fields (only for editable fields)
             document.getElementById('tlx-input').value = tlx.toFixed(1);
             document.getElementById('tly-input').value = tly.toFixed(1);
             document.getElementById('trx-input').value = trx.toFixed(1);
             document.getElementById('try-input').value = tryVal.toFixed(1);
-            document.getElementById('blx-input').value = blx.toFixed(1);
-            document.getElementById('bly-input').value = bly.toFixed(1);
             document.getElementById('brx-input').value = brx.toFixed(1);
-            document.getElementById('bry-input').value = bry.toFixed(1);
             
             // Update the initialGuess object
             initialGuess.tl.x = tlx;
