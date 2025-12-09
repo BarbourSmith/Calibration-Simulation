@@ -1680,12 +1680,6 @@ computeConvergeButton.addEventListener('click', async () => {
         clearCanvas();
 
         var guessThisTime = JSON.parse(JSON.stringify(startingGuess)); //Deep copy to break the reference to the starting guess
-        //Randomize the initial guess +- 200mm
-        guessThisTime.tl.x = guessThisTime.tl.x + (Math.random() * 400) - 200;
-        guessThisTime.tl.y = guessThisTime.tl.y + (Math.random() * 400) - 200;
-        guessThisTime.tr.x = guessThisTime.tr.x + (Math.random() * 400) - 200;
-        guessThisTime.tr.y = guessThisTime.tr.y + (Math.random() * 400) - 200;
-        guessThisTime.bl.x = guessThisTime.bl.x + (Math.random() * 400) - 200;
 
         var result = findMaxFitness(guessThisTime, measurements);
         
