@@ -1777,13 +1777,26 @@ window.onload = function() {
         const statusSpan = document.getElementById('adjustments-status');
         
         try {
+            // Check if measurements have been loaded
+            if (!rawMeasurements || rawMeasurements.length === 0) {
+                statusSpan.textContent = '✗ Please load measurement data first';
+                statusSpan.style.color = 'red';
+                return;
+            }
+            
             // Read scale and offset values from input fields
             const scale = parseFloat(document.getElementById('scale-input').value);
             const offset = parseFloat(document.getElementById('offset-input').value);
             
             // Validate that the values are numbers
-            if (isNaN(scale) || isNaN(offset)) {
-                statusSpan.textContent = '✗ Both fields must contain valid numbers';
+            if (isNaN(scale)) {
+                statusSpan.textContent = '✗ Scale factor must be a valid number';
+                statusSpan.style.color = 'red';
+                return;
+            }
+            
+            if (isNaN(offset)) {
+                statusSpan.textContent = '✗ Offset must be a valid number';
                 statusSpan.style.color = 'red';
                 return;
             }
