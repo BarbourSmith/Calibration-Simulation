@@ -1561,7 +1561,7 @@ function findMaxFitness(initialGuess, measurements) {
             }
 
             messagesBox.value += '\nCalibration complete \nCalibration values:';
-            messagesBox.value += '\nFitness: ' + 1/bestGuess.fitness.toFixed(7);
+            messagesBox.value += '\nFitness: ' + (1/bestGuess.fitness).toFixed(7);
             messagesBox.value += '\nMaslow_tlX: ' + bestGuess.tl.x.toFixed(1);
             messagesBox.value += '\nMaslow_tlY: ' + bestGuess.tl.y.toFixed(1);
             messagesBox.value += '\nMaslow_trX: ' + bestGuess.tr.x.toFixed(1);
@@ -1656,9 +1656,12 @@ computeButton.addEventListener('click', () => {
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
+    // Deep copy measurements to avoid mutation during evaluation and optimization
+    const measurementsCopy = JSON.parse(JSON.stringify(measurements));
+    
     // Evaluate the fitness of the initial guess
     const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
-    const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
+    const evaluatedGuess = computeLinesFitness(measurementsCopy, initialGuessCopy, true);
     const initialFitness = 1 / evaluatedGuess.fitness;
     
     const messagesBox = document.getElementById('output');
@@ -1683,6 +1686,9 @@ computeConvergeButton.addEventListener('click', async () => {
     } else {
         if (!useRectangularApproximation) {
             decisionMessage = "Rectangular approximation is disabled, using initial anchor points directly.\n";
+            if (initialFitness < 0.1) {
+                decisionMessage += "⚠️ WARNING: Initial fitness is very low (" + initialFitness.toFixed(7) + "). The optimization may not converge effectively without rectangular approximation.\n";
+            }
         } else {
             decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
         }
@@ -1698,17 +1704,18 @@ computeConvergeButton.addEventListener('click', async () => {
         // Clear the canvas
         clearCanvas();
 
-        var guessThisTime = JSON.parse(JSON.stringify(startingGuess)); //Deep copy to break the reference to the starting guess
+        // Deep copy both the starting guess and measurements for each optimization run
+        var guessThisTime = JSON.parse(JSON.stringify(startingGuess));
+        var measurementsForThisRun = JSON.parse(JSON.stringify(measurements));
 
-        var result = findMaxFitness(guessThisTime, measurements);
+        // Start the optimization - findMaxFitness handles its own output
+        findMaxFitness(guessThisTime, measurementsForThisRun);
         
-        printResults(result);
-
-        // Call computeGuess again after a delay
-        setTimeout(computeGuess, 0);
+        // Note: findMaxFitness runs asynchronously and will output results when complete
+        // The loop continues via the setTimeout inside findMaxFitness's iterate function
     }
 
-    // Start the loop
+    // Start the first optimization run
     computeGuess();
 });
 
