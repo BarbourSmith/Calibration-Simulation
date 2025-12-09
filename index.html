@@ -1656,8 +1656,9 @@ computeButton.addEventListener('click', () => {
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
-    // Deep copy measurements to avoid mutation during evaluation and optimization
-    const measurementsCopy = JSON.parse(JSON.stringify(measurements));
+    // Always use rawMeasurements as the source to avoid theta value pollution
+    // Create a fresh projected copy for evaluation
+    const measurementsCopy = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
     
     // Evaluate the fitness of the initial guess
     const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
@@ -1680,7 +1681,9 @@ computeConvergeButton.addEventListener('click', async () => {
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // Find the best rectangular starting configuration once
         // Note: findBestRectangularStart will overwrite messagesBox.value, so we prepend our messages after
-        startingGuess = await findBestRectangularStart(measurements);
+        // Use a fresh copy of measurements for rectangular search
+        const measurementsForRectSearch = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
+        startingGuess = await findBestRectangularStart(measurementsForRectSearch);
         // Prepend our initial messages
         messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
     } else {
@@ -1688,6 +1691,12 @@ computeConvergeButton.addEventListener('click', async () => {
             decisionMessage = "Rectangular approximation is disabled, using initial anchor points directly.\n";
             if (initialFitness < 0.1) {
                 decisionMessage += "⚠️ WARNING: Initial fitness is very low (" + initialFitness.toFixed(7) + "). The optimization may not converge effectively without rectangular approximation.\n";
+                decisionMessage += "\nThe optimization algorithm requires a reasonably good starting point to work properly. ";
+                decisionMessage += "When the initial guess is very poor (fitness < 0.1), the algorithm typically fails to converge.\n\n";
+                decisionMessage += "Recommendations:\n";
+                decisionMessage += "1. Enable rectangular approximation (checkbox above) to automatically find a good starting point, OR\n";
+                decisionMessage += "2. Manually enter better initial anchor point positions that are closer to your actual machine dimensions.\n\n";
+                decisionMessage += "Proceeding anyway, but calibration will likely fail...\n";
             }
         } else {
             decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
@@ -1704,9 +1713,9 @@ computeConvergeButton.addEventListener('click', async () => {
         // Clear the canvas
         clearCanvas();
 
-        // Deep copy both the starting guess and measurements for each optimization run
+        // Deep copy the starting guess and create a fresh projected measurements copy
         var guessThisTime = JSON.parse(JSON.stringify(startingGuess));
-        var measurementsForThisRun = JSON.parse(JSON.stringify(measurements));
+        var measurementsForThisRun = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
 
         // Start the optimization - findMaxFitness handles its own output
         findMaxFitness(guessThisTime, measurementsForThisRun);
