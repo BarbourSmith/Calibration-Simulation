@@ -239,9 +239,6 @@
             <h3>Optimization Controls</h3>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
-                <button id="compute-1k-button">1,000 Iterations</button>
-                <button id="compute-10k-button">10,000 Iterations</button>
-                <button id="compute-end-button">Optimize to End</button>
                 <button id="compute-converge-button">Converge</button>
             </div>
         </div>
@@ -1638,72 +1635,7 @@ computeButton.addEventListener('click', () => {
 });
 
 
-//Create the buttons that the user can click
-const compute1kButton = document.getElementById('compute-1k-button');
-compute1kButton.addEventListener('click', () => {
-    for(let i = 0; i < 1000; i++){
-        clearCanvas();
-        initialGuess = computeLinesFitness(measurements, initialGuess);
-    }
-    printResults(initialGuess);
-});
-
-const compute10kButton = document.getElementById('compute-10k-button');
-compute10kButton.addEventListener('click', () => {
-    let i = 0;
-    function loop() {
-        clearCanvas();
-        initialGuess = computeLinesFitness(measurements, initialGuess);
-        i++;
-        if (i < 10000) {
-            requestAnimationFrame(loop);
-        } else {
-            printResults(initialGuess);
-        }
-    }
-    loop();
-});
-
-
-const computeEndButton = document.getElementById('compute-end-button');
-computeEndButton.addEventListener('click', async () => {
-    // Evaluate the fitness of the initial guess
-    const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
-    const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
-    const initialFitness = 1 / evaluatedGuess.fitness;
-    
-    const messagesBox = document.getElementById('output');
-    const initialMessage = `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
-    
-    var startingGuess;
-    var decisionMessage;
-    
-    // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
-    if (initialFitness < 0.1) {
-        decisionMessage = "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
-        messagesBox.value = initialMessage + decisionMessage;
-        messagesBox.scrollTop = messagesBox.scrollHeight;
-        // First find the best rectangular starting configuration
-        // Note: findBestRectangularStart will overwrite messagesBox.value, so we prepend our messages after
-        startingGuess = await findBestRectangularStart(measurements);
-        // Prepend our initial messages
-        messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
-    } else {
-        decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
-        messagesBox.value = initialMessage + decisionMessage;
-        messagesBox.scrollTop = messagesBox.scrollHeight;
-        startingGuess = initialGuess;
-    }
-    
-    // Use the starting guess for full optimization
-    // Note: findMaxFitness doesn't return a value, it runs async iterations
-    findMaxFitness(startingGuess, measurements);
-});
-
-
-
-
-// var initialGuess = {
+//Create the buttons that the user can click// var initialGuess = {
 //     tl: {x: 5.08, y: 2790.71},
 //     tr: {x: 3650.47, y: 2811.57},
 //     bl: {x: 0, y: 0},
