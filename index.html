@@ -1708,13 +1708,13 @@ window.onload = function() {
     output.value = "";
     
     // Function to sync input fields with initialGuess
+    // Note: BLX, BLY, and BRY are fixed at 0 and have no input fields
     function syncInputFields() {
         document.getElementById('tlx-input').value = initialGuess.tl.x.toFixed(1);
         document.getElementById('tly-input').value = initialGuess.tl.y.toFixed(1);
         document.getElementById('trx-input').value = initialGuess.tr.x.toFixed(1);
         document.getElementById('try-input').value = initialGuess.tr.y.toFixed(1);
         document.getElementById('brx-input').value = initialGuess.br.x.toFixed(1);
-        // BLX, BLY, and BRY are fixed at 0 and not user-editable
     }
     
     // Initialize input fields with current values
@@ -1764,7 +1764,7 @@ window.onload = function() {
             const tryVal = parseFloat(document.getElementById('try-input').value);
             const brx = parseFloat(document.getElementById('brx-input').value);
             
-            // BLX, BLY, and BRY are fixed at 0
+            // Note: BLX, BLY, and BRY are fixed at 0 (bottom-left origin)
             const blx = 0;
             const bly = 0;
             const bry = 0;
@@ -1818,8 +1818,7 @@ window.onload = function() {
             const randomWidth = minWidth + Math.random() * (maxWidth - minWidth);
             const randomHeight = minHeight + Math.random() * (maxHeight - minHeight);
             
-            // Set bottom left corner at origin (standard configuration)
-            // BLX, BLY, and BRY are fixed at 0
+            // Note: BLX, BLY, and BRY are fixed at 0 (bottom-left origin)
             const blx = 0;
             const bly = 0;
             const bry = 0;
