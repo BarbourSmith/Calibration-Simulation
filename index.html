@@ -2,113 +2,263 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Calibration Simulation</title>
-    <button id="compute-button">Refine Measurments 1x</button>
-    <button id="compute-1k-button">1,000x</button>
-    <button id="compute-10k-button">10,000x</button>
-    <button id="compute-end-button">End</button>
-    <button id="compute-converge-button">Converge</button>
-    <br>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maslow CNC Calibration Simulation</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+        
         body {
             margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
         }
-        #surface-map-canvas {
-            border: 1px solid #333;
-            margin: 10px 0;
-            cursor: move;
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            padding: 30px;
         }
-        #search-info {
-            margin: 10px 0;
-            font-family: monospace;
-            background: #f0f0f0;
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        h1 {
+            margin: 0 0 10px 0;
+            color: #2d3748;
+            font-size: 32px;
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            color: #718096;
+            font-size: 16px;
+            margin: 0;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .section h3 {
+            margin: 0 0 15px 0;
+            color: #2d3748;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #4a5568;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        textarea, input[type="number"] {
+            width: 100%;
             padding: 10px;
-            border-radius: 5px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+            transition: border-color 0.3s ease;
         }
-        .controls {
-            margin: 10px 0;
+        
+        textarea:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
         }
-        .controls button {
-            margin: 0 5px;
-            padding: 5px 10px;
+        
+        textarea {
+            resize: vertical;
+        }
+        
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .input-field {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .status-message {
+            margin-left: 10px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        #surface-map-canvas {
+            border: 2px solid #e2e8f0;
+            margin: 20px 0;
+            cursor: move;
+            border-radius: 8px;
+            display: block;
+            max-width: 100%;
+        }
+        
+        #search-info {
+            margin: 20px 0;
+            font-family: monospace;
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #48bb78;
+        }
+        
+        #search-info h3 {
+            margin-top: 0;
+            color: #2d3748;
+        }
+        
+        #CursorLayer {
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            display: block;
+            margin: 20px 0;
+            max-width: 100%;
+        }
+        
+        #output {
+            font-family: 'Courier New', monospace;
+            background: #1a202c;
+            color: #48bb78;
+            border: none;
+            border-radius: 8px;
+            padding: 15px;
         }
     </style>
-    
 </head>
-<body id= "mainBody">
-
-<---click this button to see the simulation find the corners
-
-<div>
-    <label for="calibration-input">Calibration Data (paste your measurements here):</label><br>
-    <textarea id="calibration-input" style="width: 1000px;" rows="6" placeholder="Paste calibration data like: {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76},{bl:2132.14, br:1584.18, tr:1955.15, tl:2154.52},..."></textarea><br>
-    <button id="parse-data-button">Parse Calibration Data</button>
-    <span id="parse-status" style="margin-left: 10px; font-weight: bold;"></span>
-</div>
-
-<div style="margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
-    <h3 style="margin-top: 0;">Initial Anchor Point Positions</h3>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
-        <div>
-            <label for="tlx-input">Top Left X (mm):</label><br>
-            <input type="number" id="tlx-input" value="0" step="0.1" style="width: 120px;">
+<body id="mainBody">
+    <div class="container">
+        <header>
+            <h1>Maslow CNC Calibration Simulation</h1>
+            <p class="subtitle">Optimize your machine's anchor point positions using measurement data</p>
+        </header>
+        <div class="section">
+            <h3>Calibration Data Input</h3>
+            <label for="calibration-input">Paste your measurement data below:</label>
+            <textarea id="calibration-input" rows="6" placeholder="Paste calibration data like: {bl:1942.31, br:1952.85, tr:2053.05, tl:2051.76},{bl:2132.14, br:1584.18, tr:1955.15, tl:2154.52},..."></textarea>
+            <div class="button-group" style="margin-top: 10px;">
+                <button id="parse-data-button">Parse Calibration Data</button>
+                <span id="parse-status" class="status-message"></span>
+            </div>
         </div>
-        <div>
-            <label for="tly-input">Top Left Y (mm):</label><br>
-            <input type="number" id="tly-input" value="2500" step="0.1" style="width: 120px;">
+
+        <div class="section">
+            <h3>Initial Anchor Point Positions</h3>
+            <div class="input-grid">
+                <div class="input-field">
+                    <label for="tlx-input">Top Left X (mm)</label>
+                    <input type="number" id="tlx-input" value="0" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="tly-input">Top Left Y (mm)</label>
+                    <input type="number" id="tly-input" value="2500" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="trx-input">Top Right X (mm)</label>
+                    <input type="number" id="trx-input" value="3600" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="try-input">Top Right Y (mm)</label>
+                    <input type="number" id="try-input" value="2500" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="blx-input">Bottom Left X (mm)</label>
+                    <input type="number" id="blx-input" value="0" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="bly-input">Bottom Left Y (mm)</label>
+                    <input type="number" id="bly-input" value="0" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="brx-input">Bottom Right X (mm)</label>
+                    <input type="number" id="brx-input" value="3600" step="0.1">
+                </div>
+                <div class="input-field">
+                    <label for="bry-input">Bottom Right Y (mm)</label>
+                    <input type="number" id="bry-input" value="0" step="0.1">
+                </div>
+            </div>
+            <div class="button-group">
+                <button id="apply-anchor-button">Apply Positions</button>
+                <button id="randomize-anchor-button">Randomize Positions</button>
+                <span id="anchor-status" class="status-message"></span>
+            </div>
         </div>
-        <div>
-            <label for="trx-input">Top Right X (mm):</label><br>
-            <input type="number" id="trx-input" value="3600" step="0.1" style="width: 120px;">
+
+        <div class="section">
+            <h3>Optimization Controls</h3>
+            <div class="button-group">
+                <button id="compute-button">Refine Measurements 1x</button>
+                <button id="compute-1k-button">1,000 Iterations</button>
+                <button id="compute-10k-button">10,000 Iterations</button>
+                <button id="compute-end-button">Optimize to End</button>
+                <button id="compute-converge-button">Converge</button>
+            </div>
         </div>
-        <div>
-            <label for="try-input">Top Right Y (mm):</label><br>
-            <input type="number" id="try-input" value="2500" step="0.1" style="width: 120px;">
+        <div id="views"></div>
+        
+        <div id="search-info" style="display:none;">
+            <h3>Search Space Visualization - Interactive 3D Surface Map</h3>
+            <p id="search-status">Preparing search...</p>
+        </div>
+        
+        <canvas id="surface-map-canvas" width="1000" height="600" style="display:none;"></canvas>
+        
+        <div class="section">
+            <h3>Output</h3>
+            <textarea id="output" rows="16" readonly></textarea>
         </div>
     </div>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
-        <div>
-            <label for="blx-input">Bottom Left X (mm):</label><br>
-            <input type="number" id="blx-input" value="0" step="0.1" style="width: 120px;">
-        </div>
-        <div>
-            <label for="bly-input">Bottom Left Y (mm):</label><br>
-            <input type="number" id="bly-input" value="0" step="0.1" style="width: 120px;">
-        </div>
-        <div>
-            <label for="brx-input">Bottom Right X (mm):</label><br>
-            <input type="number" id="brx-input" value="3600" step="0.1" style="width: 120px;">
-        </div>
-        <div>
-            <label for="bry-input">Bottom Right Y (mm):</label><br>
-            <input type="number" id="bry-input" value="0" step="0.1" style="width: 120px;">
-        </div>
-    </div>
-    <button id="apply-anchor-button" style="margin-right: 10px; padding: 8px 16px;">Apply Positions</button>
-    <button id="randomize-anchor-button" style="padding: 8px 16px;">Randomize Positions</button>
-    <span id="anchor-status" style="margin-left: 10px; font-weight: bold;"></span>
-</div>
-
-<div id = "views"></div>
-<div id="search-info" style="display:none;">
-    <h3>Search Space Visualization - Interactive 3D Surface Map</h3>
-    <div class="controls">
-        <button id="rotate-left">← Rotate Left</button>
-        <button id="rotate-right">Rotate Right →</button>
-        <button id="tilt-up">↑ Tilt Up</button>
-        <button id="tilt-down">↓ Tilt Down</button>
-        <button id="zoom-in">+ Zoom In</button>
-        <button id="zoom-out">- Zoom Out</button>
-        <button id="reset-view">Reset View</button>
-    </div>
-    <p id="search-status">Preparing search...</p>
-</div>
-<canvas id="surface-map-canvas" width="1000" height="600" style="display:none;"></canvas>
-<div>
-    <textarea id="output" style="width: 1000px;" rows="16"></textarea>
-</div>
-
-</div>
 
 
 
@@ -1103,47 +1253,6 @@ function render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGue
 }
 
 function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues, bestGuess) {
-    document.getElementById('rotate-left').onclick = () => {
-        surfaceMapState.rotationY -= 15;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('rotate-right').onclick = () => {
-        surfaceMapState.rotationY += 15;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('tilt-up').onclick = () => {
-        surfaceMapState.rotationX -= 10;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('tilt-down').onclick = () => {
-        surfaceMapState.rotationX += 10;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('zoom-in').onclick = () => {
-        surfaceMapState.zoom *= 1.2;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('zoom-out').onclick = () => {
-        surfaceMapState.zoom /= 1.2;
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
-    document.getElementById('reset-view').onclick = () => {
-        surfaceMapState = {
-            rotationX: -30,
-            rotationY: 45,
-            zoom: 0.15,
-            offsetX: 0,
-            offsetY: 0
-        };
-        render3DSurface(canvas, fitnessData, widthValues, heightValues, bestGuess);
-    };
-    
     // Mouse drag to rotate
     let isDragging = false;
     let lastX = 0, lastY = 0;
@@ -1348,47 +1457,6 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
 }
 
 function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
-    document.getElementById('rotate-left').onclick = () => {
-        surfaceMapState.rotationY -= 15;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('rotate-right').onclick = () => {
-        surfaceMapState.rotationY += 15;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('tilt-up').onclick = () => {
-        surfaceMapState.rotationX -= 10;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('tilt-down').onclick = () => {
-        surfaceMapState.rotationX += 10;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('zoom-in').onclick = () => {
-        surfaceMapState.zoom *= 1.2;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('zoom-out').onclick = () => {
-        surfaceMapState.zoom /= 1.2;
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
-    document.getElementById('reset-view').onclick = () => {
-        surfaceMapState = {
-            rotationX: -30,
-            rotationY: 45,
-            zoom: 0.15,
-            offsetX: 0,
-            offsetY: 0
-        };
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    };
-    
     // Mouse drag to rotate
     let isDragging = false;
     let lastX = 0, lastY = 0;
