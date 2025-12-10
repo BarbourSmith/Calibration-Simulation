@@ -243,6 +243,12 @@
 
         <div class="section">
             <h3>Optimization Controls</h3>
+            <div style="margin-bottom: 15px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="use-rectangular-approximation" checked style="margin-right: 8px; cursor: pointer; width: auto;">
+                    Use rectangular approximation for poor initial guesses (fitness < 0.1)
+                </label>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -365,9 +371,13 @@ function computeEndpointFitness(line1, line2, line3, line4){
 
     const fitness = (a+b+c+d+e+f)/6;
     
-
-    return fitness;
+    // Ensure fitness is never exactly 0 to prevent division by zero when displaying as 1/fitness
+    // A fitness of 0 indicates a degenerate solution where all lines converge to a single point
+    // Adding a small epsilon (0.001mm average error) prevents Infinity in the UI
+    const MIN_FITNESS = 0.001;
+    return Math.max(fitness, MIN_FITNESS);
 }
+
 
 /**
  * Computes the end point of a line based on its starting point, angle, and length.
@@ -448,18 +458,26 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
  */
 function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing = false){
 
-    //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
+    // Compute the center of the frame to get better initial theta values
+    const centerX = (individual.tl.x + individual.tr.x + individual.bl.x + individual.br.x) / 4;
+    const centerY = (individual.tl.y + individual.tr.y + individual.bl.y + individual.br.y) / 4;
+
+    //These set the initial conditions for theta. They should point roughly toward the center of the frame.
     if(typeof measurement.tlTheta === 'undefined'){
-        measurement.tlTheta = -.3;
+        // Point from top-left corner toward center
+        measurement.tlTheta = Math.atan2(centerY - individual.tl.y, centerX - individual.tl.x);
     }
     if(typeof measurement.trTheta === 'undefined'){
-        measurement.trTheta = 3.5;
+        // Point from top-right corner toward center
+        measurement.trTheta = Math.atan2(centerY - individual.tr.y, centerX - individual.tr.x);
     }
     if(typeof measurement.blTheta === 'undefined'){
-        measurement.blTheta = .5;
+        // Point from bottom-left corner toward center
+        measurement.blTheta = Math.atan2(centerY - individual.bl.y, centerX - individual.bl.x);
     }
     if(typeof measurement.brTheta === 'undefined'){
-        measurement.brTheta = 2.6;
+        // Point from bottom-right corner toward center
+        measurement.brTheta = Math.atan2(centerY - individual.br.y, centerX - individual.br.x);
     }
 
 
@@ -630,7 +648,10 @@ function computeLinesFitness(measurements, lastGuess, skipDrawing = false){
 
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
     lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
-    lastGuess.fitness = fitness;
+    
+    // Ensure fitness is never exactly 0 to prevent division by zero when displaying as 1/fitness
+    const MIN_FITNESS = 0.001;
+    lastGuess.fitness = Math.max(fitness, MIN_FITNESS);
 
     return lastGuess;
 }
@@ -1555,7 +1576,7 @@ function findMaxFitness(initialGuess, measurements) {
             }
 
             messagesBox.value += '\nCalibration complete \nCalibration values:';
-            messagesBox.value += '\nFitness: ' + 1/bestGuess.fitness.toFixed(7);
+            messagesBox.value += '\nFitness: ' + (1/bestGuess.fitness).toFixed(7);
             messagesBox.value += '\nMaslow_tlX: ' + bestGuess.tl.x.toFixed(1);
             messagesBox.value += '\nMaslow_tlY: ' + bestGuess.tl.y.toFixed(1);
             messagesBox.value += '\nMaslow_trX: ' + bestGuess.tr.x.toFixed(1);
@@ -1650,29 +1671,51 @@ computeButton.addEventListener('click', () => {
 // }
 const computeConvergeButton = document.getElementById('compute-converge-button');
 computeConvergeButton.addEventListener('click', async () => {
+    // Always use rawMeasurements as the source to avoid theta value pollution
+    // Create a fresh projected copy for evaluation
+    const measurementsCopy = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
+    
     // Evaluate the fitness of the initial guess
     const initialGuessCopy = JSON.parse(JSON.stringify(initialGuess));
-    const evaluatedGuess = computeLinesFitness(measurements, initialGuessCopy, true);
+    const evaluatedGuess = computeLinesFitness(measurementsCopy, initialGuessCopy, true);
     const initialFitness = 1 / evaluatedGuess.fitness;
     
     const messagesBox = document.getElementById('output');
     const initialMessage = `Initial guess fitness: ${initialFitness.toFixed(7)}\n`;
     
+    // Check if rectangular approximation is enabled
+    const useRectangularApproximation = document.getElementById('use-rectangular-approximation').checked;
+    
     var startingGuess;
     var decisionMessage;
     
-    // Only use rectangular optimization if initial fitness is less than 0.1 (poor guess)
-    if (initialFitness < 0.1) {
+    // Only use rectangular optimization if toggle is enabled AND initial fitness is less than 0.1 (poor guess)
+    if (useRectangularApproximation && initialFitness < 0.1) {
         decisionMessage = "Initial fitness < 0.1 (poor guess), running rectangular optimization to find better starting point.\n";
         messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         // Find the best rectangular starting configuration once
         // Note: findBestRectangularStart will overwrite messagesBox.value, so we prepend our messages after
-        startingGuess = await findBestRectangularStart(measurements);
+        // Use a fresh copy of measurements for rectangular search
+        const measurementsForRectSearch = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
+        startingGuess = await findBestRectangularStart(measurementsForRectSearch);
         // Prepend our initial messages
         messagesBox.value = initialMessage + decisionMessage + messagesBox.value;
     } else {
-        decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        if (!useRectangularApproximation) {
+            decisionMessage = "Rectangular approximation is disabled, using initial anchor points directly.\n";
+            if (initialFitness < 0.1) {
+                decisionMessage += "⚠️ WARNING: Initial fitness is very low (" + initialFitness.toFixed(7) + "). The optimization may not converge effectively without rectangular approximation.\n";
+                decisionMessage += "\nThe optimization algorithm requires a reasonably good starting point to work properly. ";
+                decisionMessage += "When the initial guess is very poor (fitness < 0.1), the algorithm typically fails to converge.\n\n";
+                decisionMessage += "Recommendations:\n";
+                decisionMessage += "1. Enable rectangular approximation (checkbox above) to automatically find a good starting point, OR\n";
+                decisionMessage += "2. Manually enter better initial anchor point positions that are closer to your actual machine dimensions.\n\n";
+                decisionMessage += "Proceeding anyway, but calibration will likely fail...\n";
+            }
+        } else {
+            decisionMessage = "Initial fitness >= 0.1 (already good), skipping rectangular optimization and using initial guess directly.\n";
+        }
         messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         startingGuess = initialGuess;
@@ -1685,17 +1728,18 @@ computeConvergeButton.addEventListener('click', async () => {
         // Clear the canvas
         clearCanvas();
 
-        var guessThisTime = JSON.parse(JSON.stringify(startingGuess)); //Deep copy to break the reference to the starting guess
+        // Deep copy the starting guess and create a fresh projected measurements copy
+        var guessThisTime = JSON.parse(JSON.stringify(startingGuess));
+        var measurementsForThisRun = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
 
-        var result = findMaxFitness(guessThisTime, measurements);
+        // Start the optimization - findMaxFitness handles its own output
+        findMaxFitness(guessThisTime, measurementsForThisRun);
         
-        printResults(result);
-
-        // Call computeGuess again after a delay
-        setTimeout(computeGuess, 0);
+        // Note: findMaxFitness runs asynchronously and will output results when complete
+        // The loop continues via the setTimeout inside findMaxFitness's iterate function
     }
 
-    // Start the loop
+    // Start the first optimization run
     computeGuess();
 });
 
@@ -1717,7 +1761,7 @@ var initialGuess = {
     tr: {x: 3600, y: 2500},
     bl: {x: 0, y: 0},
     br: {x: 3600, y: 0},
-    fitness: 0
+    fitness: Infinity  // Initialize to Infinity so any real fitness will be better
 }
 
 
@@ -1867,7 +1911,7 @@ window.onload = function() {
             initialGuess.bl.y = bly;
             initialGuess.br.x = brx;
             initialGuess.br.y = bry;
-            initialGuess.fitness = 0;
+            initialGuess.fitness = Infinity;  // Initialize to Infinity so any real fitness will be better
             
             statusSpan.textContent = '✓ Anchor positions applied successfully!';
             statusSpan.style.color = 'green';
@@ -1928,7 +1972,7 @@ window.onload = function() {
             initialGuess.bl.y = bly;
             initialGuess.br.x = brx;
             initialGuess.br.y = bry;
-            initialGuess.fitness = 0;
+            initialGuess.fitness = Infinity;  // Initialize to Infinity so any real fitness will be better
             
             statusSpan.textContent = '✓ Positions randomized successfully!';
             statusSpan.style.color = 'green';
