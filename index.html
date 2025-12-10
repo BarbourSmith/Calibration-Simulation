@@ -371,9 +371,13 @@ function computeEndpointFitness(line1, line2, line3, line4){
 
     const fitness = (a+b+c+d+e+f)/6;
     
-
-    return fitness;
+    // Ensure fitness is never exactly 0 to prevent division by zero when displaying as 1/fitness
+    // A fitness of 0 indicates a degenerate solution where all lines converge to a single point
+    // Adding a small epsilon (0.001mm average error) prevents Infinity in the UI
+    const MIN_FITNESS = 0.001;
+    return Math.max(fitness, MIN_FITNESS);
 }
+
 
 /**
  * Computes the end point of a line based on its starting point, angle, and length.
@@ -636,7 +640,10 @@ function computeLinesFitness(measurements, lastGuess, skipDrawing = false){
 
     //Here is where we need to do the calculation of which corner is the worst and which direction to move it
     lastGuess = computeFurthestFromCenterOfMass(allLines, lastGuess);
-    lastGuess.fitness = fitness;
+    
+    // Ensure fitness is never exactly 0 to prevent division by zero when displaying as 1/fitness
+    const MIN_FITNESS = 0.001;
+    lastGuess.fitness = Math.max(fitness, MIN_FITNESS);
 
     return lastGuess;
 }
@@ -1746,7 +1753,7 @@ var initialGuess = {
     tr: {x: 3600, y: 2500},
     bl: {x: 0, y: 0},
     br: {x: 3600, y: 0},
-    fitness: 0
+    fitness: Infinity  // Initialize to Infinity so any real fitness will be better
 }
 
 
@@ -1896,7 +1903,7 @@ window.onload = function() {
             initialGuess.bl.y = bly;
             initialGuess.br.x = brx;
             initialGuess.br.y = bry;
-            initialGuess.fitness = 0;
+            initialGuess.fitness = Infinity;  // Initialize to Infinity so any real fitness will be better
             
             statusSpan.textContent = '✓ Anchor positions applied successfully!';
             statusSpan.style.color = 'green';
@@ -1957,7 +1964,7 @@ window.onload = function() {
             initialGuess.bl.y = bly;
             initialGuess.br.x = brx;
             initialGuess.br.y = bry;
-            initialGuess.fitness = 0;
+            initialGuess.fitness = Infinity;  // Initialize to Infinity so any real fitness will be better
             
             statusSpan.textContent = '✓ Positions randomized successfully!';
             statusSpan.style.color = 'green';
