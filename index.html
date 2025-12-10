@@ -458,18 +458,26 @@ function walkLines(tlLine, trLine, blLine, brLine, stepSize) {
  */
 function magneticallyAttractedLinesFitness(measurement, individual, skipDrawing = false){
 
-    //These set the inital conditions for theta. They don't really mater, they just have to kinda point to the middle of the frame.
+    // Compute the center of the frame to get better initial theta values
+    const centerX = (individual.tl.x + individual.tr.x + individual.bl.x + individual.br.x) / 4;
+    const centerY = (individual.tl.y + individual.tr.y + individual.bl.y + individual.br.y) / 4;
+
+    //These set the initial conditions for theta. They should point roughly toward the center of the frame.
     if(typeof measurement.tlTheta === 'undefined'){
-        measurement.tlTheta = -.3;
+        // Point from top-left corner toward center
+        measurement.tlTheta = Math.atan2(centerY - individual.tl.y, centerX - individual.tl.x);
     }
     if(typeof measurement.trTheta === 'undefined'){
-        measurement.trTheta = 3.5;
+        // Point from top-right corner toward center
+        measurement.trTheta = Math.atan2(centerY - individual.tr.y, centerX - individual.tr.x);
     }
     if(typeof measurement.blTheta === 'undefined'){
-        measurement.blTheta = .5;
+        // Point from bottom-left corner toward center
+        measurement.blTheta = Math.atan2(centerY - individual.bl.y, centerX - individual.bl.x);
     }
     if(typeof measurement.brTheta === 'undefined'){
-        measurement.brTheta = 2.6;
+        // Point from bottom-right corner toward center
+        measurement.brTheta = Math.atan2(centerY - individual.br.y, centerX - individual.br.x);
     }
 
 
