@@ -1124,15 +1124,23 @@ async function findBestRectangularStart(measurements) {
         const fitnessDiff = Math.abs(exhaustiveBestFitness - diagonalBestFitness);
         const sizeDiff = Math.abs(exhaustiveBestSize - diagonalBestSize);
         messagesBox.value += `  ⚠ Different results: Size differs by ${sizeDiff}mm, fitness differs by ${fitnessDiff.toFixed(6)}\n`;
+        messagesBox.value += `  → Using exhaustive search result (${exhaustiveBestSize}mm) as it finds the true global optimum\n`;
         console.log(`\n⚠ VALIDATION: Different results found!`);
         console.log(`  Exhaustive: ${exhaustiveBestSize}mm (fitness: ${exhaustiveBestFitness.toFixed(6)})`);
         console.log(`  Ternary:    ${diagonalBestSize}mm (fitness: ${diagonalBestFitness.toFixed(6)})`);
         console.log(`  Difference: ${sizeDiff}mm size, ${fitnessDiff.toFixed(6)} fitness`);
+        console.log(`  → Using exhaustive search result as it has better fitness`);
     }
     messagesBox.value += `\n`;
     
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${diagonalBestSize}mm using ${phase1TestCount} evaluations (ternary search)\n`;
-    messagesBox.value += `  Best fitness: ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
+    // Use exhaustive search result since it finds the true global optimum
+    // The ternary search can get trapped in local minima
+    const finalBestSize = exhaustiveBestSize;
+    const finalBestFitness = exhaustiveBestFitness;
+    
+    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using exhaustive search (${exhaustiveTestCount} evaluations)\n`;
+    messagesBox.value += `  Best fitness: ${finalBestFitness.toFixed(6)} (display: ${(1/finalBestFitness).toFixed(4)})\n`;
+    messagesBox.value += `  Note: Ternary search found ${diagonalBestSize}mm but exhaustive search found better optimum at ${finalBestSize}mm\n`;
     
     // Add summary table to messages box
     messagesBox.value += `\nAll diagonal values tested (sorted by size):\n`;
@@ -1146,9 +1154,9 @@ async function findBestRectangularStart(measurements) {
     
     // Calculate optimal radius (distance from origin to diagonal point)
     // For a square, the diagonal is sqrt(2) * side
-    const optimalRadius = Math.sqrt(2) * diagonalBestSize;
+    const optimalRadius = Math.sqrt(2) * finalBestSize;
     
-    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${finalBestSize}x${finalBestSize}mm)\n`;
     messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
     searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
