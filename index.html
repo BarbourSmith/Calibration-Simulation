@@ -249,6 +249,20 @@
                     Use rectangular approximation for poor initial guesses (fitness < 0.1)
                 </label>
             </div>
+            <div style="margin-bottom: 15px;">
+                <label for="coarse-step-input">Coarse Grid Step Size (mm):</label>
+                <input type="number" id="coarse-step-input" value="300" min="100" max="500" step="50" 
+                       style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; width: 150px; font-size: 14px;">
+                <span style="margin-left: 10px; color: #718096; font-size: 13px;">
+                    Smaller = more detailed but slower
+                </span>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="show-refinement-phases" checked style="margin-right: 8px; cursor: pointer; width: auto;">
+                    Show all refinement phases in visualization
+                </label>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -920,6 +934,77 @@ function scaleMeasurementsBasedOnTension(measurements, guess) {
 }
 
 /**
+ * Estimates initial frame dimensions from measurement data by analyzing
+ * the relationships between distances to different corners.
+ * Uses the insight that max corner distances relate to the frame diagonal.
+ * @param {Array} measurements - Array of measurement objects with {bl, br, tr, tl} distances
+ * @returns {Object} - Estimated {width, height} in mm
+ */
+function estimateFrameDimensionsFromMeasurements(measurements) {
+    // Find maximum distance to each corner across all measurements
+    // The max distance to any corner approximates the diagonal of the frame
+    const maxBL = Math.max(...measurements.map(m => m.bl));
+    const maxBR = Math.max(...measurements.map(m => m.br));
+    const maxTR = Math.max(...measurements.map(m => m.tr));
+    const maxTL = Math.max(...measurements.map(m => m.tl));
+    
+    // The diagonal of the frame is approximately the max distance to any corner
+    const diagonal = Math.max(maxBL, maxBR, maxTR, maxTL);
+    
+    // Also compute averages for aspect ratio estimation
+    let avgBL = 0, avgBR = 0, avgTR = 0, avgTL = 0;
+    measurements.forEach(m => {
+        avgBL += m.bl;
+        avgBR += m.br;
+        avgTR += m.tr;
+        avgTL += m.tl;
+    });
+    const count = measurements.length;
+    avgBL /= count;
+    avgBR /= count;
+    avgTR /= count;
+    avgTL /= count;
+    
+    // Estimate aspect ratio by comparing left/right vs top/bottom distances
+    // If BR+BL > TR+TL, frame is likely wider (more horizontal spread)
+    // If TR+TL > BR+BL, frame is likely taller (more vertical spread)
+    const horizontalSpread = (avgBR + avgBL) / 2;
+    const verticalSpread = (avgTR + avgTL) / 2;
+    
+    // Use the ratio to estimate width vs height
+    // This is a heuristic based on the observation that:
+    // - Larger horizontal distances suggest a wider frame
+    // - Larger vertical distances suggest a taller frame
+    const totalSpread = horizontalSpread + verticalSpread;
+    const widthRatio = horizontalSpread / totalSpread;
+    const heightRatio = verticalSpread / totalSpread;
+    
+    // For a rectangular frame, diagonal² = width² + height²
+    // We know diagonal, and we have ratio information
+    // If widthRatio:heightRatio = w:h, and w² + h² = diagonal²
+    // Then w = diagonal * sqrt(widthRatio² / (widthRatio² + heightRatio²))
+    const diagonalSq = diagonal * diagonal;
+    const ratioSumSq = widthRatio * widthRatio + heightRatio * heightRatio;
+    
+    let width = diagonal * widthRatio / Math.sqrt(ratioSumSq);
+    let height = diagonal * heightRatio / Math.sqrt(ratioSumSq);
+    
+    // Ensure reasonable bounds
+    width = Math.max(1000, Math.min(10000, width));
+    height = Math.max(1000, Math.min(10000, height));
+    
+    console.log(`Frame dimension estimation from measurements:`);
+    console.log(`  Max distances - BL: ${maxBL.toFixed(1)}mm, BR: ${maxBR.toFixed(1)}mm, TR: ${maxTR.toFixed(1)}mm, TL: ${maxTL.toFixed(1)}mm`);
+    console.log(`  Estimated diagonal: ${diagonal.toFixed(1)}mm`);
+    console.log(`  Average distances - BL: ${avgBL.toFixed(1)}mm, BR: ${avgBR.toFixed(1)}mm, TR: ${avgTR.toFixed(1)}mm, TL: ${avgTL.toFixed(1)}mm`);
+    console.log(`  Spread indicators - Horizontal: ${horizontalSpread.toFixed(1)}mm, Vertical: ${verticalSpread.toFixed(1)}mm`);
+    console.log(`  Ratio - Width: ${widthRatio.toFixed(3)}, Height: ${heightRatio.toFixed(3)}`);
+    console.log(`  Final estimate: ${width.toFixed(1)}mm × ${height.toFixed(1)}mm`);
+    
+    return { width, height };
+}
+
+/**
  * Searches for the best rectangular starting configuration by testing all combinations
  * of width and height in 100mm increments up to 5000mm.
  * Assumes bl=(0,0), br.y=0, and rectangular frame (tl.x=0, tl.y=tr.y, br.x=tr.x)
@@ -955,343 +1040,248 @@ async function findBestRectangularStart(measurements) {
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // PHASE 1: Use ternary search to find optimal diagonal size efficiently
-    let diagonalBestFitness = Infinity;
-    let diagonalBestSize = 0;
-    let diagonalResults = [];
+    // PHASE 0: Estimate initial frame dimensions from measurement data
+    console.log(`\n=== PHASE 0: ESTIMATING FRAME DIMENSIONS FROM MEASUREMENTS ===`);
+    messagesBox.value += `Phase 0: Estimating frame dimensions from measurement data...\n`;
+    
+    const estimatedDims = estimateFrameDimensionsFromMeasurements(measurementsCopy);
+    const estWidth = Math.round(estimatedDims.width);
+    const estHeight = Math.round(estimatedDims.height);
+    
+    console.log(`\nEstimated dimensions: ${estWidth}mm × ${estHeight}mm`);
+    messagesBox.value += `  Estimated dimensions: ${estWidth}mm × ${estHeight}mm\n`;
+    messagesBox.value += `\n`;
+    
+    // Get user-defined coarse step size
+    const coarseStepInput = document.getElementById('coarse-step-input');
+    const userCoarseStep = coarseStepInput ? parseInt(coarseStepInput.value) : 300;
+    
+    // Check if refinement phases should be shown
+    const showRefinementCheckbox = document.getElementById('show-refinement-phases');
+    const showRefinementPhases = showRefinementCheckbox ? showRefinementCheckbox.checked : true;
+    
+    // PHASE 1: Coarse 2D grid search followed by local refinement
+    // This approach avoids local optima by testing the full parameter space first
+    console.log(`\n=== PHASE 1: COARSE 2D GRID SEARCH ===`);
+    messagesBox.value += `Phase 1: Searching for optimal frame dimensions using 2D grid...\n`;
+    searchStatus.textContent = `Phase 1: Coarse 2D grid search...`;
+    
     let phase1TestCount = 0;
-    
-    // Helper function to evaluate fitness at a given diagonal size
-    async function evaluateDiagonalSize(size) {
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(testMeasurements, guess, true);
-        const fitnessValue = 1 / result.fitness;
-        diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
-        phase1TestCount++;
-        
-        // Log each evaluation for debugging
-        console.log(`[Diagonal Test #${phase1TestCount}] Size: ${size}mm, Raw Fitness: ${result.fitness.toFixed(6)}, Display Fitness (1/raw): ${fitnessValue.toFixed(4)}`);
-        
-        return { fitness: result.fitness, size: size };
-    }
-    
-    // Ternary search for optimal diagonal size (100 to 5000mm range)
-    let leftSize = 100;
-    // PHASE 1: EXHAUSTIVE DIAGONAL SEARCH followed by TERNARY REFINEMENT
-    // PHASE 1A: EXHAUSTIVE DIAGONAL SEARCH - finds global optimum region
-    // Skip the initial ternary search - go directly to exhaustive for global optimum
-    console.log(`\n=== PHASE 1A: EXHAUSTIVE DIAGONAL SEARCH (every 50mm) ===`);
-    messagesBox.value += `\nPhase 1A: Running exhaustive diagonal search (every 50mm)...\n`;
-    searchStatus.textContent = `Phase 1A: Exhaustive diagonal search (every 50mm)...`;
-    
-    let exhaustiveBestFitness = Infinity;
-    let exhaustiveBestSize = 0;
-    let exhaustiveResults = [];
-    let exhaustiveTestCount = 0;
-    
-    // Test every 50mm from 100 to 5000
-    for (let size = 100; size <= 5000; size += 50) {
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        exhaustiveResults.push({size, rawFitness: result.fitness, displayFitness: 1/result.fitness});
-        exhaustiveTestCount++;
-        
-        if (result.fitness < exhaustiveBestFitness) {
-            exhaustiveBestFitness = result.fitness;
-            exhaustiveBestSize = size;
-        }
-        
-        // Update progress UI every 10 tests (minimal delay for responsiveness)
-        if (exhaustiveTestCount % 10 === 0) {
-            searchStatus.textContent = `Exhaustive search: ${exhaustiveTestCount} tested (${size}mm)`;
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
-    
-    console.log(`\n=== PHASE 1A EXHAUSTIVE SEARCH COMPLETE ===`);
-    console.log(`Tested ${exhaustiveTestCount} points (every 50mm from 100 to 5000mm)`);
-    console.log(`Best diagonal size: ${exhaustiveBestSize}mm`);
-    console.log(`Best fitness: ${exhaustiveBestFitness.toFixed(6)}`);
-    
-    // Print exhaustive results table
-    console.log(`\n=== ALL EXHAUSTIVE DIAGONAL VALUES (every 50mm) ===`);
-    console.log(`${'Size (mm)'.padEnd(12)} | ${'Raw Fitness'.padEnd(15)} | ${'Display (1/raw)'.padEnd(15)} | Best?`);
-    console.log(`${''.padEnd(12, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(5, '-')}`);
-    exhaustiveResults.forEach(result => {
-        const isBest = result.size === exhaustiveBestSize ? ' *** BEST ***' : '';
-        console.log(`${String(result.size).padEnd(12)} | ${result.rawFitness.toFixed(6).padEnd(15)} | ${result.displayFitness.toFixed(4).padEnd(15)}${isBest}`);
-    });
-    console.log();
-    
-    // Add exhaustive search results to messages box
-    messagesBox.value += `\nPhase 1A complete: Exhaustive search tested ${exhaustiveTestCount} points (every 50mm)\n`;
-    messagesBox.value += `  Best coarse result: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
-    
-    // PHASE 1B: Refine exhaustive search result with ternary search
-    // Use exhaustive result as starting point for high-precision refinement
-    console.log(`\n=== PHASE 1B: TERNARY REFINEMENT FROM EXHAUSTIVE RESULT ===`);
-    messagesBox.value += `\nPhase 1B: Refining exhaustive result (${exhaustiveBestSize}mm) with ternary search...\n`;
-    searchStatus.textContent = `Phase 1B: Refining exhaustive result with ternary search...`;
-    
-    // Set up refinement search range around exhaustive best (±50mm to cover the gap)
-    let refineLeftSize = Math.max(100, exhaustiveBestSize - 50);
-    let refineRightSize = Math.min(5000, exhaustiveBestSize + 50);
-    const refinePrecision = 1; // Higher precision - stop when range is less than 1mm
-    
-    let refinedBestFitness = exhaustiveBestFitness;
-    let refinedBestSize = exhaustiveBestSize;
-    let refineTestCount = 0;
-    
-    console.log(`Starting refinement from exhaustive result: ${exhaustiveBestSize}mm`);
-    console.log(`Refinement search range: [${refineLeftSize}mm, ${refineRightSize}mm]`);
-    console.log(`Refinement precision target: ${refinePrecision}mm`);
-    console.log(`Note: Lower raw fitness is better\n`);
-    
-    let refineIteration = 0;
-    while (refineRightSize - refineLeftSize > refinePrecision) {
-        refineIteration++;
-        const leftThird = refineLeftSize + (refineRightSize - refineLeftSize) / 3;
-        const rightThird = refineRightSize - (refineRightSize - refineLeftSize) / 3;
-        
-        console.log(`\n--- Refinement Iteration ${refineIteration} ---`);
-        console.log(`Current range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm] (width: ${(refineRightSize - refineLeftSize).toFixed(2)}mm)`);
-        console.log(`Testing left third: ${Math.round(leftThird)}mm and right third: ${Math.round(rightThird)}mm`);
-        
-        // Evaluate left third
-        const leftSize = Math.round(leftThird);
-        const leftGuess = {
-            tl: {x: 0, y: leftSize},
-            tr: {x: leftSize, y: leftSize},
-            bl: {x: 0, y: 0},
-            br: {x: leftSize, y: 0},
-            fitness: 0
-        };
-        const leftResult = computeLinesFitness(measurementsCopy, leftGuess, true);
-        refineTestCount++;
-        console.log(`[Refinement Test #${refineTestCount}] Size: ${leftSize}mm, Raw Fitness: ${leftResult.fitness.toFixed(6)}`);
-        
-        // Evaluate right third
-        const rightSize = Math.round(rightThird);
-        const rightGuess = {
-            tl: {x: 0, y: rightSize},
-            tr: {x: rightSize, y: rightSize},
-            bl: {x: 0, y: 0},
-            br: {x: rightSize, y: 0},
-            fitness: 0
-        };
-        const rightResult = computeLinesFitness(measurementsCopy, rightGuess, true);
-        refineTestCount++;
-        console.log(`[Refinement Test #${refineTestCount}] Size: ${rightSize}mm, Raw Fitness: ${rightResult.fitness.toFixed(6)}`);
-        
-        console.log(`Comparison: Left (${leftResult.fitness.toFixed(6)}) ${leftResult.fitness < rightResult.fitness ? '<' : '>='} Right (${rightResult.fitness.toFixed(6)})`);
-        
-        // Track best
-        if (leftResult.fitness < refinedBestFitness) {
-            refinedBestFitness = leftResult.fitness;
-            refinedBestSize = leftSize;
-            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-        }
-        if (rightResult.fitness < refinedBestFitness) {
-            refinedBestFitness = rightResult.fitness;
-            refinedBestSize = rightSize;
-            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-        }
-        
-        // Update progress
-        searchStatus.textContent = `Phase 1B: Ternary refinement (${refineTestCount} tested) - Best: ${refinedBestSize}mm`;
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Narrow search range
-        if (leftResult.fitness < rightResult.fitness) {
-            console.log(`Decision: Narrowing to LEFT (discarding [${rightThird.toFixed(2)}, ${refineRightSize.toFixed(2)}])`);
-            refineRightSize = rightThird;
-        } else {
-            console.log(`Decision: Narrowing to RIGHT (discarding [${refineLeftSize.toFixed(2)}, ${leftThird.toFixed(2)}])`);
-            refineLeftSize = leftThird;
-        }
-    }
-    
-    // Final evaluation at center
-    console.log(`\n--- Final Refinement Evaluation ---`);
-    console.log(`Converged to range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm]`);
-    const finalRefineSize = Math.round((refineLeftSize + refineRightSize) / 2);
-    console.log(`Testing final center point: ${finalRefineSize}mm`);
-    
-    const finalRefineGuess = {
-        tl: {x: 0, y: finalRefineSize},
-        tr: {x: finalRefineSize, y: finalRefineSize},
-        bl: {x: 0, y: 0},
-        br: {x: finalRefineSize, y: 0},
-        fitness: 0
-    };
-    const finalRefineResult = computeLinesFitness(measurementsCopy, finalRefineGuess, true);
-    refineTestCount++;
-    console.log(`[Refinement Test #${refineTestCount}] Size: ${finalRefineSize}mm, Raw Fitness: ${finalRefineResult.fitness.toFixed(6)}`);
-    
-    if (finalRefineResult.fitness < refinedBestFitness) {
-        refinedBestFitness = finalRefineResult.fitness;
-        refinedBestSize = finalRefineSize;
-        console.log(`  → Final point is the new refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-    } else {
-        console.log(`  → Previous refined best remains: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-    }
-    
-    console.log(`\n=== PHASE 1B REFINEMENT COMPLETE ===`);
-    console.log(`Refined diagonal size: ${refinedBestSize}mm`);
-    console.log(`Refined fitness: ${refinedBestFitness.toFixed(6)}`);
-    console.log(`Total refinement evaluations: ${refineTestCount}`);
-    console.log(`Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction from exhaustive result`);
-    
-    messagesBox.value += `\nRefinement complete:\n`;
-    messagesBox.value += `  Exhaustive coarse: ${exhaustiveBestSize}mm (fitness ${exhaustiveBestFitness.toFixed(6)})\n`;
-    messagesBox.value += `  Refined precise:   ${refinedBestSize}mm (fitness ${refinedBestFitness.toFixed(6)}) ✓\n`;
-    messagesBox.value += `  Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction\n`;
-    messagesBox.value += `  Total tests: ${exhaustiveTestCount} exhaustive + ${refineTestCount} refinement = ${exhaustiveTestCount + refineTestCount} evaluations\n`;
-    messagesBox.value += `\n`;
-    
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${refinedBestSize}mm using two-stage search\n`;
-    messagesBox.value += `  Best fitness: ${refinedBestFitness.toFixed(6)} (display: ${(1/refinedBestFitness).toFixed(4)})\n`;
-    messagesBox.value += `  Method: Exhaustive coarse (50mm steps) → Ternary refinement (1mm precision)\n`;
-    messagesBox.value += `\n`;
-    
-    // Calculate optimal radius (distance from origin to diagonal point)
-    // For a square, the diagonal is sqrt(2) * side
-    const optimalRadius = Math.sqrt(2) * refinedBestSize;
-    
-    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${refinedBestSize}x${refinedBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
-    searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
-    
-    // PHASE 2: Use ternary search to efficiently find the maximum on the arc
-    let bestGuess = null;
+    let bestWidth = estWidth;
+    let bestHeight = estHeight;
     let bestFitness = Infinity;
-    let testedCount = 0;
     
-    // Store tested points for visualization
-    const testedPoints = [];
+    // PHASE 1A: Coarse 2D grid search to find the global optimum region
+    // Use user-defined step size to cover wide range
+    const coarseWidthMin = 2000;
+    const coarseWidthMax = 7000;  // Increased to cover wider frames
+    const coarseHeightMin = 2000;
+    const coarseHeightMax = 6500;
+    const coarseStep = userCoarseStep;
     
-    // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
-    // We limit to angles where aspect ratio <= 3:1
-    const minAngle = Math.atan(1/3); // ~18.43° in radians (aspect ratio 3:1, wide)
-    const maxAngle = Math.PI / 2 - minAngle; // ~71.57° in radians (aspect ratio 1:3, tall)
+    console.log(`\n=== PHASE 1A: COARSE GRID SEARCH ===`);
+    console.log(`Width range: ${coarseWidthMin}mm to ${coarseWidthMax}mm (step ${coarseStep}mm)`);
+    console.log(`Height range: ${coarseHeightMin}mm to ${coarseHeightMax}mm (step ${coarseStep}mm)`);
     
-    // Convert arc spacing (mm) to angle precision for ternary search termination
-    // We stop when the search range is smaller than 2 * arcSpacing
-    const anglePrecision = (2 * arcSpacing) / optimalRadius;
+    const widthSteps = Math.floor((coarseWidthMax - coarseWidthMin) / coarseStep) + 1;
+    const heightSteps = Math.floor((coarseHeightMax - coarseHeightMin) / coarseStep) + 1;
+    const totalCoarseTests = widthSteps * heightSteps;
     
-    // Helper function to evaluate fitness at a given angle
-    async function evaluateFitnessAtAngle(angleRad) {
-        const width = optimalRadius * Math.cos(angleRad);
-        const height = optimalRadius * Math.sin(angleRad);
-        
-        // Skip invalid dimensions
-        if (width <= 0 || height <= 0) return { fitness: Infinity, result: null };
-        
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-        const guess = {
-            tl: {x: 0, y: height},
-            tr: {x: width, y: height},
-            bl: {x: 0, y: 0},
-            br: {x: width, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(testMeasurements, guess, true);
-        const fitnessValue = 1 / result.fitness;
-        
-        // Store the tested point for visualization
-        testedPoints.push({
-            width: width,
-            height: height,
-            fitness: fitnessValue,
-            rawFitness: result.fitness
-        });
-        
-        testedCount++;
-        
-        return { fitness: result.fitness, result: result, angle: angleRad };
+    console.log(`Total coarse tests: ${totalCoarseTests}`);
+    messagesBox.value += `Phase 1A: Coarse grid search (${coarseStep}mm steps, ~${totalCoarseTests} tests)...\n`;
+    
+    // Collect fitness data for visualization - will hold all phases
+    const allFitnessPoints = [];
+    const widthValues = [];
+    const heightValues = [];
+    
+    for (let w = coarseWidthMin; w <= coarseWidthMax; w += coarseStep) {
+        widthValues.push(w);
+    }
+    for (let h = coarseHeightMin; h <= coarseHeightMax; h += coarseStep) {
+        heightValues.push(h);
     }
     
-    // Ternary search to find the angle with maximum fitness (minimum rawFitness)
-    let left = minAngle;
-    let right = maxAngle;
-    
-    while (right - left > anglePrecision) {
-        // Divide the range into three parts
-        const leftThird = left + (right - left) / 3;
-        const rightThird = right - (right - left) / 3;
-        
-        // Evaluate fitness at the two interior points
-        const leftResult = await evaluateFitnessAtAngle(leftThird);
-        const rightResult = await evaluateFitnessAtAngle(rightThird);
-        
-        // Update best guess if we found a better fitness
-        if (leftResult.fitness < bestFitness) {
-            bestFitness = leftResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(leftResult.result));
-        }
-        if (rightResult.fitness < bestFitness) {
-            bestFitness = rightResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(rightResult.result));
-        }
-        
-        // Update progress
-        const searchRange = ((right - left) / (maxAngle - minAngle) * 100).toFixed(1);
-        if (bestGuess) {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-        } else {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining)...`;
-        }
-        
-        // Render current data
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Narrow the search range based on which point has better fitness
-        // We want to minimize fitness (lower is better), so we eliminate the part with worse fitness
-        if (leftResult.fitness < rightResult.fitness) {
-            // Maximum is in the left 2/3, eliminate the right 1/3
-            right = rightThird;
-        } else {
-            // Maximum is in the right 2/3, eliminate the left 1/3
-            left = leftThird;
+    for (let w = coarseWidthMin; w <= coarseWidthMax; w += coarseStep) {
+        for (let h = coarseHeightMin; h <= coarseHeightMax; h += coarseStep) {
+            const guess = {
+                tl: {x: 0, y: h},
+                tr: {x: w, y: h},
+                bl: {x: 0, y: 0},
+                br: {x: w, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurementsCopy, guess, true);
+            phase1TestCount++;
+            
+            // Store fitness data for visualization
+            const displayFitness = 1 / result.fitness;
+            allFitnessPoints.push({
+                width: w,
+                height: h,
+                rawFitness: result.fitness,
+                displayFitness: displayFitness,
+                phase: 'coarse'
+            });
+            
+            if (result.fitness < bestFitness) {
+                bestFitness = result.fitness;
+                bestWidth = w;
+                bestHeight = h;
+                console.log(`[Test #${phase1TestCount}] New best: ${w}×${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+            }
+            
+            // Update progress every 20 tests
+            if (phase1TestCount % 20 === 0) {
+                const progress = (phase1TestCount / totalCoarseTests * 100).toFixed(1);
+                searchStatus.textContent = `Phase 1A: Coarse grid (${phase1TestCount}/${totalCoarseTests}, ${progress}%) - Best: ${bestWidth}×${bestHeight}mm`;
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
         }
     }
     
-    // Evaluate the final center point for completeness
-    const finalAngle = (left + right) / 2;
-    const finalResult = await evaluateFitnessAtAngle(finalAngle);
-    if (finalResult.fitness < bestFitness) {
-        bestFitness = finalResult.fitness;
-        bestGuess = JSON.parse(JSON.stringify(finalResult.result));
+    console.log(`\n=== PHASE 1A COMPLETE ===`);
+    console.log(`Coarse search tested ${phase1TestCount} configurations`);
+    console.log(`Best coarse result: ${bestWidth}×${bestHeight}mm, fitness: ${bestFitness.toFixed(6)}`);
+    messagesBox.value += `Phase 1A complete: Best coarse result = ${bestWidth}×${bestHeight}mm (fitness ${bestFitness.toFixed(6)})\n`;
+    
+    // PHASE 1B: Medium refinement around best coarse result
+    // Search ±coarseStep around best result with medium steps (100mm)
+    console.log(`\n=== PHASE 1B: MEDIUM REFINEMENT ===`);
+    messagesBox.value += `Phase 1B: Medium refinement around ${bestWidth}×${bestHeight}mm...\n`;
+    
+    const mediumWidthMin = Math.max(2000, bestWidth - coarseStep);
+    const mediumWidthMax = Math.min(10000, bestWidth + coarseStep);
+    const mediumHeightMin = Math.max(2000, bestHeight - coarseStep);
+    const mediumHeightMax = Math.min(10000, bestHeight + coarseStep);
+    const mediumStep = 100;
+    
+    console.log(`Width range: ${mediumWidthMin}mm to ${mediumWidthMax}mm (step ${mediumStep}mm)`);
+    console.log(`Height range: ${mediumHeightMin}mm to ${mediumHeightMax}mm (step ${mediumStep}mm)`);
+    
+    for (let w = mediumWidthMin; w <= mediumWidthMax; w += mediumStep) {
+        for (let h = mediumHeightMin; h <= mediumHeightMax; h += mediumStep) {
+            const guess = {
+                tl: {x: 0, y: h},
+                tr: {x: w, y: h},
+                bl: {x: 0, y: 0},
+                br: {x: w, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurementsCopy, guess, true);
+            phase1TestCount++;
+            
+            // Store medium refinement points if enabled
+            if (showRefinementPhases) {
+                const displayFitness = 1 / result.fitness;
+                allFitnessPoints.push({
+                    width: w,
+                    height: h,
+                    rawFitness: result.fitness,
+                    displayFitness: displayFitness,
+                    phase: 'medium'
+                });
+            }
+            
+            if (result.fitness < bestFitness) {
+                bestFitness = result.fitness;
+                bestWidth = w;
+                bestHeight = h;
+                console.log(`[Test #${phase1TestCount}] New best: ${w}×${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+            }
+        }
     }
     
-    // Final render
-    searchStatus.textContent = "Rendering final 3D surface map...";
+    console.log(`\n=== PHASE 1B COMPLETE ===`);
+    console.log(`Best medium result: ${bestWidth}×${bestHeight}mm, fitness: ${bestFitness.toFixed(6)}`);
+    messagesBox.value += `Phase 1B complete: Best medium result = ${bestWidth}×${bestHeight}mm (fitness ${bestFitness.toFixed(6)})\n`;
+    
+    // PHASE 1C: Fine local refinement
+    // Search ±150mm around best result with fine steps (25mm)
+    console.log(`\n=== PHASE 1C: FINE LOCAL REFINEMENT ===`);
+    messagesBox.value += `Phase 1C: Fine refinement around ${bestWidth}×${bestHeight}mm...\n`;
+    
+    let finalWidth = bestWidth;
+    let finalHeight = bestHeight;
+    let finalFitness = bestFitness;
+    
+    const fineRange = 150;
+    const fineStep = 25;
+    const fineWidthMin = Math.max(2000, bestWidth - fineRange);
+    const fineWidthMax = Math.min(10000, bestWidth + fineRange);
+    const fineHeightMin = Math.max(2000, bestHeight - fineRange);
+    const fineHeightMax = Math.min(10000, bestHeight + fineRange);
+    
+    console.log(`Width range: ${fineWidthMin}mm to ${fineWidthMax}mm (step ${fineStep}mm)`);
+    console.log(`Height range: ${fineHeightMin}mm to ${fineHeightMax}mm (step ${fineStep}mm)`);
+    
+    for (let w = fineWidthMin; w <= fineWidthMax; w += fineStep) {
+        for (let h = fineHeightMin; h <= fineHeightMax; h += fineStep) {
+            const guess = {
+                tl: {x: 0, y: h},
+                tr: {x: w, y: h},
+                bl: {x: 0, y: 0},
+                br: {x: w, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurementsCopy, guess, true);
+            phase1TestCount++;
+            
+            // Store fine refinement points if enabled
+            if (showRefinementPhases) {
+                const displayFitness = 1 / result.fitness;
+                allFitnessPoints.push({
+                    width: w,
+                    height: h,
+                    rawFitness: result.fitness,
+                    displayFitness: displayFitness,
+                    phase: 'fine'
+                });
+            }
+            
+            if (result.fitness < finalFitness) {
+                finalFitness = result.fitness;
+                finalWidth = w;
+                finalHeight = h;
+                console.log(`[Test #${phase1TestCount}] New best: ${w}×${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+            }
+        }
+    }
+    
+    console.log(`\n=== PHASE 1C COMPLETE ===`);
+    console.log(`Final best: ${finalWidth}×${finalHeight}mm, fitness: ${finalFitness.toFixed(6)}`);
+    console.log(`Total Phase 1 tests: ${phase1TestCount}`);
+    messagesBox.value += `Phase 1C complete: Final dimensions = ${finalWidth}×${finalHeight}mm (fitness ${finalFitness.toFixed(6)})\n`;
+    messagesBox.value += `Total Phase 1 tests: ${phase1TestCount}\n`;
+    messagesBox.value += `\n`;
+    
+    // Create the best guess from Phase 1 results
+    const bestGuess = {
+        tl: {x: 0, y: finalHeight},
+        tr: {x: finalWidth, y: finalHeight},
+        bl: {x: 0, y: 0},
+        br: {x: finalWidth, y: 0},
+        fitness: finalFitness
+    };
+    
+    // Calculate the computed radius from the estimate (for arc overlay)
+    // Using the diagonal of the estimated dimensions
+    const computedRadius = Math.sqrt(estWidth * estWidth + estHeight * estHeight) / 2;
+    
+    // Final render - show fitness landscape heatmap
+    searchStatus.textContent = "Rendering fitness landscape heatmap...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    renderFitnessLandscape(canvas, allFitnessPoints, bestWidth, bestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases);
     
     // Setup controls
-    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
+    setupFitnessLandscapeControls(canvas, allFitnessPoints, bestWidth, bestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using ternary search (1mm precision). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using efficient ternary search (1mm precision).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    searchStatus.textContent = `✓ Search complete! Tested ${phase1TestCount} points. Best: ${finalWidth.toFixed(1)}×${finalHeight.toFixed(1)}mm, fitness: ${(1/finalFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${phase1TestCount} configurations.\n\nBest rectangular start:\n  Width: ${finalWidth.toFixed(1)}mm\n  Height: ${finalHeight.toFixed(1)}mm\n  Fitness: ${(1/finalFitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
@@ -1673,6 +1663,297 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
             surfaceMapState.zoom /= 1.1;
         }
         render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    };
+}
+
+// Fitness Landscape Visualization Functions
+function renderFitnessLandscape(canvas, allPoints, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Calculate plot dimensions
+    const padding = 80;
+    const legendWidth = 150;
+    const plotWidth = width - 2 * padding - legendWidth;
+    const plotHeight = height - 2 * padding;
+    
+    // Find data bounds
+    let minWidth = Infinity, maxWidth = -Infinity;
+    let minHeight = Infinity, maxHeight = -Infinity;
+    let minFitness = Infinity, maxFitness = -Infinity;
+    
+    for (const point of allPoints) {
+        if (point.width < minWidth) minWidth = point.width;
+        if (point.width > maxWidth) maxWidth = point.width;
+        if (point.height < minHeight) minHeight = point.height;
+        if (point.height > maxHeight) maxHeight = point.height;
+        if (point.displayFitness < minFitness) minFitness = point.displayFitness;
+        if (point.displayFitness > maxFitness) maxFitness = point.displayFitness;
+    }
+    
+    // Function to convert data coordinates to canvas coordinates
+    const toCanvasX = (w) => padding + ((w - minWidth) / (maxWidth - minWidth)) * plotWidth;
+    const toCanvasY = (h) => padding + plotHeight - ((h - minHeight) / (maxHeight - minHeight)) * plotHeight;
+    
+    // Draw title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Fitness Landscape Heatmap', width / 2, 30);
+    ctx.font = '12px sans-serif';
+    const subtitle = showRefinementPhases ? '(All refinement phases shown)' : '(Coarse grid only)';
+    ctx.fillText(subtitle, width / 2, 50);
+    
+    // Draw data points as circles
+    for (const point of allPoints) {
+        const x = toCanvasX(point.width);
+        const y = toCanvasY(point.height);
+        
+        // Size based on phase
+        let pointSize = 3;
+        if (showRefinementPhases) {
+            if (point.phase === 'fine') pointSize = 2;
+            else if (point.phase === 'medium') pointSize = 2.5;
+        }
+        
+        // Color based on fitness (normalized)
+        const normalizedFitness = (point.displayFitness - minFitness) / (maxFitness - minFitness);
+        
+        // Use a color gradient from dark blue (low) to bright yellow (high)
+        let r, g, b;
+        if (normalizedFitness < 0.5) {
+            const t = normalizedFitness * 2;
+            r = 0;
+            g = Math.floor(t * 150);
+            b = Math.floor(100 + t * 155);
+        } else {
+            const t = (normalizedFitness - 0.5) * 2;
+            r = Math.floor(t * 255);
+            g = Math.floor(150 + t * 105);
+            b = Math.floor(255 - t * 255);
+        }
+        
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.beginPath();
+        ctx.arc(x, y, pointSize, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+    
+    // Draw arc overlay with computed radius
+    if (computedRadius > 0) {
+        // Arc center is at origin (bottom-left of frame)
+        const arcCenterX = toCanvasX(0);
+        const arcCenterY = toCanvasY(0);
+        const arcRadiusPixels = (computedRadius / (maxWidth - minWidth)) * plotWidth;
+        
+        ctx.strokeStyle = 'rgba(255, 100, 255, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.arc(arcCenterX, arcCenterY, arcRadiusPixels, 0, Math.PI / 2, false);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Label the arc
+        const labelX = arcCenterX + arcRadiusPixels * Math.cos(Math.PI / 4);
+        const labelY = arcCenterY - arcRadiusPixels * Math.sin(Math.PI / 4);
+        ctx.fillStyle = 'rgba(255, 100, 255, 0.9)';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Computed Radius: ${computedRadius.toFixed(0)}mm`, labelX, labelY - 10);
+    }
+    
+    // Mark coarse best result (red circle)
+    const coarseBestX = toCanvasX(coarseBestWidth);
+    const coarseBestY = toCanvasY(coarseBestHeight);
+    ctx.strokeStyle = '#ff0000';
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(coarseBestX, coarseBestY, 15, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Mark final result (green X)
+    const finalX = toCanvasX(finalWidth);
+    const finalY = toCanvasY(finalHeight);
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 3;
+    const crossSize = 12;
+    ctx.beginPath();
+    ctx.moveTo(finalX - crossSize, finalY - crossSize);
+    ctx.lineTo(finalX + crossSize, finalY + crossSize);
+    ctx.moveTo(finalX + crossSize, finalY - crossSize);
+    ctx.lineTo(finalX - crossSize, finalY + crossSize);
+    ctx.stroke();
+    
+    // Draw axes labels
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    
+    // X-axis (Width)
+    ctx.fillText('Width (mm)', padding + plotWidth / 2, height - 20);
+    ctx.fillText(minWidth.toFixed(0), padding, height - 40);
+    ctx.fillText(maxWidth.toFixed(0), padding + plotWidth, height - 40);
+    ctx.fillText(((minWidth + maxWidth) / 2).toFixed(0), padding + plotWidth / 2, height - 40);
+    
+    // Y-axis (Height)
+    ctx.save();
+    ctx.translate(20, padding + plotHeight / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Height (mm)', 0, 0);
+    ctx.restore();
+    
+    ctx.textAlign = 'right';
+    ctx.fillText(minHeight.toFixed(0), padding - 10, padding + plotHeight + 5);
+    ctx.fillText(maxHeight.toFixed(0), padding - 10, padding + 5);
+    ctx.fillText(((minHeight + maxHeight) / 2).toFixed(0), padding - 10, padding + plotHeight / 2);
+    
+    // Draw legend
+    const legendX = width - legendWidth + 20;
+    const legendY = padding;
+    const legendHeight = plotHeight * 0.6;
+    const legendBarWidth = 30;
+    
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('Fitness', legendX, legendY - 10);
+    
+    // Draw color bar
+    const barSteps = 100;
+    for (let i = 0; i < barSteps; i++) {
+        const y = legendY + (barSteps - 1 - i) * (legendHeight / barSteps);
+        const t = i / (barSteps - 1);
+        
+        let r, g, b;
+        if (t < 0.5) {
+            const tt = t * 2;
+            r = 0;
+            g = Math.floor(tt * 150);
+            b = Math.floor(100 + tt * 155);
+        } else {
+            const tt = (t - 0.5) * 2;
+            r = Math.floor(tt * 255);
+            g = Math.floor(150 + tt * 105);
+            b = Math.floor(255 - tt * 255);
+        }
+        
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(legendX, y, legendBarWidth, legendHeight / barSteps + 1);
+    }
+    
+    // Draw legend labels
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(maxFitness.toFixed(2), legendX + legendBarWidth + 5, legendY + 5);
+    ctx.fillText(minFitness.toFixed(2), legendX + legendBarWidth + 5, legendY + legendHeight);
+    ctx.fillText(((minFitness + maxFitness) / 2).toFixed(2), legendX + legendBarWidth + 5, legendY + legendHeight / 2);
+    
+    // Draw legend for markers
+    ctx.font = '11px sans-serif';
+    const markerLegendY = legendY + legendHeight + 40;
+    
+    // Arc legend
+    ctx.strokeStyle = 'rgba(255, 100, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.arc(legendX + 10, markerLegendY, 8, 0, Math.PI / 2, false);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('Computed Arc', legendX + 25, markerLegendY + 5);
+    
+    // Red circle for coarse best
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(legendX + 10, markerLegendY + 30, 8, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('Coarse Best', legendX + 25, markerLegendY + 35);
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`(${coarseBestWidth}×${coarseBestHeight}mm)`, legendX + 25, markerLegendY + 48);
+    
+    // Green X for final result
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    const xSize = 8;
+    ctx.beginPath();
+    ctx.moveTo(legendX + 10 - xSize, markerLegendY + 70 - xSize);
+    ctx.lineTo(legendX + 10 + xSize, markerLegendY + 70 + xSize);
+    ctx.moveTo(legendX + 10 + xSize, markerLegendY + 70 - xSize);
+    ctx.lineTo(legendX + 10 - xSize, markerLegendY + 70 + xSize);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('Final Result', legendX + 25, markerLegendY + 75);
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`(${finalWidth}×${finalHeight}mm)`, legendX + 25, markerLegendY + 88);
+}
+
+function setupFitnessLandscapeControls(canvas, allPoints, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases) {
+    // Add click handler to show fitness value at clicked point
+    canvas.onclick = function(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+        
+        const padding = 80;
+        const legendWidth = 150;
+        const plotWidth = canvas.width - 2 * padding - legendWidth;
+        const plotHeight = canvas.height - 2 * padding;
+        
+        if (clickX >= padding && clickX <= padding + plotWidth && clickY >= padding && clickY <= padding + plotHeight) {
+            // Find data bounds
+            let minWidth = Infinity, maxWidth = -Infinity;
+            let minHeight = Infinity, maxHeight = -Infinity;
+            
+            for (const point of allPoints) {
+                if (point.width < minWidth) minWidth = point.width;
+                if (point.width > maxWidth) maxWidth = point.width;
+                if (point.height < minHeight) minHeight = point.height;
+                if (point.height > maxHeight) maxHeight = point.height;
+            }
+            
+            // Convert click position to data coordinates
+            const dataWidth = minWidth + ((clickX - padding) / plotWidth) * (maxWidth - minWidth);
+            const dataHeight = maxHeight - ((clickY - padding) / plotHeight) * (maxHeight - minHeight);
+            
+            // Find closest point
+            let closestPoint = null;
+            let minDist = Infinity;
+            
+            for (const point of allPoints) {
+                const dist = Math.sqrt(
+                    Math.pow(point.width - dataWidth, 2) + 
+                    Math.pow(point.height - dataHeight, 2)
+                );
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestPoint = point;
+                }
+            }
+            
+            if (closestPoint && minDist < 500) { // Within 500mm
+                console.log(`Clicked: ${closestPoint.width}×${closestPoint.height}mm`);
+                console.log(`  Phase: ${closestPoint.phase}`);
+                console.log(`  Raw fitness: ${closestPoint.rawFitness.toFixed(6)}`);
+                console.log(`  Display fitness: ${closestPoint.displayFitness.toFixed(4)}`);
+                alert(`Dimensions: ${closestPoint.width}×${closestPoint.height}mm\nPhase: ${closestPoint.phase}\nRaw fitness: ${closestPoint.rawFitness.toFixed(6)}\nDisplay fitness (1/raw): ${closestPoint.displayFitness.toFixed(4)}`);
+            }
+        }
     };
 }
 
