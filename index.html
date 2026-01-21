@@ -249,6 +249,20 @@
                     Use rectangular approximation for poor initial guesses (fitness < 0.1)
                 </label>
             </div>
+            <div style="margin-bottom: 15px;">
+                <label for="coarse-step-input">Coarse Grid Step Size (mm):</label>
+                <input type="number" id="coarse-step-input" value="300" min="100" max="500" step="50" 
+                       style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; width: 150px; font-size: 14px;">
+                <span style="margin-left: 10px; color: #718096; font-size: 13px;">
+                    Smaller = more detailed but slower
+                </span>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="show-refinement-phases" checked style="margin-right: 8px; cursor: pointer; width: auto;">
+                    Show all refinement phases in visualization
+                </label>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -1038,6 +1052,14 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `  Estimated dimensions: ${estWidth}mm × ${estHeight}mm\n`;
     messagesBox.value += `\n`;
     
+    // Get user-defined coarse step size
+    const coarseStepInput = document.getElementById('coarse-step-input');
+    const userCoarseStep = coarseStepInput ? parseInt(coarseStepInput.value) : 300;
+    
+    // Check if refinement phases should be shown
+    const showRefinementCheckbox = document.getElementById('show-refinement-phases');
+    const showRefinementPhases = showRefinementCheckbox ? showRefinementCheckbox.checked : true;
+    
     // PHASE 1: Coarse 2D grid search followed by local refinement
     // This approach avoids local optima by testing the full parameter space first
     console.log(`\n=== PHASE 1: COARSE 2D GRID SEARCH ===`);
@@ -1050,13 +1072,12 @@ async function findBestRectangularStart(measurements) {
     let bestFitness = Infinity;
     
     // PHASE 1A: Coarse 2D grid search to find the global optimum region
-    // Use larger steps to cover wide range efficiently (300mm steps)
-    // Expand width range to cover expected 4576mm width
+    // Use user-defined step size to cover wide range
     const coarseWidthMin = 2000;
     const coarseWidthMax = 7000;  // Increased to cover wider frames
     const coarseHeightMin = 2000;
     const coarseHeightMax = 6500;
-    const coarseStep = 300;
+    const coarseStep = userCoarseStep;
     
     console.log(`\n=== PHASE 1A: COARSE GRID SEARCH ===`);
     console.log(`Width range: ${coarseWidthMin}mm to ${coarseWidthMax}mm (step ${coarseStep}mm)`);
@@ -1069,8 +1090,8 @@ async function findBestRectangularStart(measurements) {
     console.log(`Total coarse tests: ${totalCoarseTests}`);
     messagesBox.value += `Phase 1A: Coarse grid search (${coarseStep}mm steps, ~${totalCoarseTests} tests)...\n`;
     
-    // Collect fitness data for visualization
-    const fitnessData = [];
+    // Collect fitness data for visualization - will hold all phases
+    const allFitnessPoints = [];
     const widthValues = [];
     const heightValues = [];
     
@@ -1079,11 +1100,6 @@ async function findBestRectangularStart(measurements) {
     }
     for (let h = coarseHeightMin; h <= coarseHeightMax; h += coarseStep) {
         heightValues.push(h);
-    }
-    
-    // Initialize 2D array for fitness data
-    for (let i = 0; i < heightValues.length; i++) {
-        fitnessData[i] = [];
     }
     
     for (let w = coarseWidthMin; w <= coarseWidthMax; w += coarseStep) {
@@ -1099,16 +1115,15 @@ async function findBestRectangularStart(measurements) {
             const result = computeLinesFitness(measurementsCopy, guess, true);
             phase1TestCount++;
             
-            // Store fitness data for visualization (use display fitness 1/raw)
+            // Store fitness data for visualization
             const displayFitness = 1 / result.fitness;
-            const widthIdx = widthValues.indexOf(w);
-            const heightIdx = heightValues.indexOf(h);
-            fitnessData[heightIdx][widthIdx] = {
+            allFitnessPoints.push({
                 width: w,
                 height: h,
                 rawFitness: result.fitness,
-                displayFitness: displayFitness
-            };
+                displayFitness: displayFitness,
+                phase: 'coarse'
+            });
             
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
@@ -1158,6 +1173,18 @@ async function findBestRectangularStart(measurements) {
             const result = computeLinesFitness(measurementsCopy, guess, true);
             phase1TestCount++;
             
+            // Store medium refinement points if enabled
+            if (showRefinementPhases) {
+                const displayFitness = 1 / result.fitness;
+                allFitnessPoints.push({
+                    width: w,
+                    height: h,
+                    rawFitness: result.fitness,
+                    displayFitness: displayFitness,
+                    phase: 'medium'
+                });
+            }
+            
             if (result.fitness < bestFitness) {
                 bestFitness = result.fitness;
                 bestWidth = w;
@@ -1203,6 +1230,18 @@ async function findBestRectangularStart(measurements) {
             const result = computeLinesFitness(measurementsCopy, guess, true);
             phase1TestCount++;
             
+            // Store fine refinement points if enabled
+            if (showRefinementPhases) {
+                const displayFitness = 1 / result.fitness;
+                allFitnessPoints.push({
+                    width: w,
+                    height: h,
+                    rawFitness: result.fitness,
+                    displayFitness: displayFitness,
+                    phase: 'fine'
+                });
+            }
+            
             if (result.fitness < finalFitness) {
                 finalFitness = result.fitness;
                 finalWidth = w;
@@ -1228,22 +1267,18 @@ async function findBestRectangularStart(measurements) {
         fitness: finalFitness
     };
     
-    // Store tested points for visualization (using the best result)
-    const testedPoints = [{
-        width: finalWidth,
-        height: finalHeight,
-        fitness: 1 / finalFitness,
-        rawFitness: finalFitness
-    }];
+    // Calculate the computed radius from the estimate (for arc overlay)
+    // Using the diagonal of the estimated dimensions
+    const computedRadius = Math.sqrt(estWidth * estWidth + estHeight * estHeight) / 2;
     
     // Final render - show fitness landscape heatmap
     searchStatus.textContent = "Rendering fitness landscape heatmap...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, bestWidth, bestHeight, finalWidth, finalHeight);
+    renderFitnessLandscape(canvas, allFitnessPoints, bestWidth, bestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases);
     
     // Setup controls
-    setupFitnessLandscapeControls(canvas, fitnessData, widthValues, heightValues, bestWidth, bestHeight, finalWidth, finalHeight);
+    setupFitnessLandscapeControls(canvas, allFitnessPoints, bestWidth, bestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases);
     
     searchStatus.textContent = `✓ Search complete! Tested ${phase1TestCount} points. Best: ${finalWidth.toFixed(1)}×${finalHeight.toFixed(1)}mm, fitness: ${(1/finalFitness).toFixed(4)}`;
     messagesBox.value += `\n✓ Search complete! Tested ${phase1TestCount} configurations.\n\nBest rectangular start:\n  Width: ${finalWidth.toFixed(1)}mm\n  Height: ${finalHeight.toFixed(1)}mm\n  Fitness: ${(1/finalFitness).toFixed(4)}\n\nStarting optimization...\n`;
@@ -1632,7 +1667,7 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
 }
 
 // Fitness Landscape Visualization Functions
-function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight) {
+function renderFitnessLandscape(canvas, allPoints, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
@@ -1641,24 +1676,29 @@ function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, 
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, width, height);
     
-    // Calculate cell dimensions
+    // Calculate plot dimensions
     const padding = 80;
     const legendWidth = 150;
     const plotWidth = width - 2 * padding - legendWidth;
     const plotHeight = height - 2 * padding;
-    const cellWidth = plotWidth / widthValues.length;
-    const cellHeight = plotHeight / heightValues.length;
     
-    // Find min/max fitness for color scaling
-    let minFitness = Infinity;
-    let maxFitness = -Infinity;
-    for (let i = 0; i < fitnessData.length; i++) {
-        for (let j = 0; j < fitnessData[i].length; j++) {
-            const displayFitness = fitnessData[i][j].displayFitness;
-            if (displayFitness < minFitness) minFitness = displayFitness;
-            if (displayFitness > maxFitness) maxFitness = displayFitness;
-        }
+    // Find data bounds
+    let minWidth = Infinity, maxWidth = -Infinity;
+    let minHeight = Infinity, maxHeight = -Infinity;
+    let minFitness = Infinity, maxFitness = -Infinity;
+    
+    for (const point of allPoints) {
+        if (point.width < minWidth) minWidth = point.width;
+        if (point.width > maxWidth) maxWidth = point.width;
+        if (point.height < minHeight) minHeight = point.height;
+        if (point.height > maxHeight) maxHeight = point.height;
+        if (point.displayFitness < minFitness) minFitness = point.displayFitness;
+        if (point.displayFitness > maxFitness) maxFitness = point.displayFitness;
     }
+    
+    // Function to convert data coordinates to canvas coordinates
+    const toCanvasX = (w) => padding + ((w - minWidth) / (maxWidth - minWidth)) * plotWidth;
+    const toCanvasY = (h) => padding + plotHeight - ((h - minHeight) / (maxHeight - minHeight)) * plotHeight;
     
     // Draw title
     ctx.fillStyle = '#ffffff';
@@ -1666,95 +1706,82 @@ function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, 
     ctx.textAlign = 'center';
     ctx.fillText('Fitness Landscape Heatmap', width / 2, 30);
     ctx.font = '12px sans-serif';
-    ctx.fillText('(Brighter = Better Fitness)', width / 2, 50);
+    const subtitle = showRefinementPhases ? '(All refinement phases shown)' : '(Coarse grid only)';
+    ctx.fillText(subtitle, width / 2, 50);
     
-    // Draw heatmap
-    for (let i = 0; i < heightValues.length; i++) {
-        for (let j = 0; j < widthValues.length; j++) {
-            const data = fitnessData[i][j];
-            const x = padding + j * cellWidth;
-            const y = padding + (heightValues.length - 1 - i) * cellHeight;
-            
-            // Color based on fitness (normalized)
-            const normalizedFitness = (data.displayFitness - minFitness) / (maxFitness - minFitness);
-            
-            // Use a color gradient from dark blue (low) to bright yellow (high)
-            let r, g, b;
-            if (normalizedFitness < 0.5) {
-                // Dark blue to cyan
-                const t = normalizedFitness * 2;
-                r = 0;
-                g = Math.floor(t * 150);
-                b = Math.floor(100 + t * 155);
-            } else {
-                // Cyan to yellow
-                const t = (normalizedFitness - 0.5) * 2;
-                r = Math.floor(t * 255);
-                g = Math.floor(150 + t * 105);
-                b = Math.floor(255 - t * 255);
-            }
-            
-            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-            ctx.fillRect(x, y, cellWidth, cellHeight);
+    // Draw data points as circles
+    for (const point of allPoints) {
+        const x = toCanvasX(point.width);
+        const y = toCanvasY(point.height);
+        
+        // Size based on phase
+        let pointSize = 3;
+        if (showRefinementPhases) {
+            if (point.phase === 'fine') pointSize = 2;
+            else if (point.phase === 'medium') pointSize = 2.5;
         }
+        
+        // Color based on fitness (normalized)
+        const normalizedFitness = (point.displayFitness - minFitness) / (maxFitness - minFitness);
+        
+        // Use a color gradient from dark blue (low) to bright yellow (high)
+        let r, g, b;
+        if (normalizedFitness < 0.5) {
+            const t = normalizedFitness * 2;
+            r = 0;
+            g = Math.floor(t * 150);
+            b = Math.floor(100 + t * 155);
+        } else {
+            const t = (normalizedFitness - 0.5) * 2;
+            r = Math.floor(t * 255);
+            g = Math.floor(150 + t * 105);
+            b = Math.floor(255 - t * 255);
+        }
+        
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.beginPath();
+        ctx.arc(x, y, pointSize, 0, 2 * Math.PI);
+        ctx.fill();
     }
     
-    // Draw grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i <= widthValues.length; i++) {
-        const x = padding + i * cellWidth;
+    // Draw arc overlay with computed radius
+    if (computedRadius > 0) {
+        // Arc center is at origin (bottom-left of frame)
+        const arcCenterX = toCanvasX(0);
+        const arcCenterY = toCanvasY(0);
+        const arcRadiusPixels = (computedRadius / (maxWidth - minWidth)) * plotWidth;
+        
+        ctx.strokeStyle = 'rgba(255, 100, 255, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(x, padding);
-        ctx.lineTo(x, padding + plotHeight);
+        ctx.arc(arcCenterX, arcCenterY, arcRadiusPixels, 0, Math.PI / 2, false);
         ctx.stroke();
-    }
-    for (let i = 0; i <= heightValues.length; i++) {
-        const y = padding + i * cellHeight;
-        ctx.beginPath();
-        ctx.moveTo(padding, y);
-        ctx.lineTo(padding + plotWidth, y);
-        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Label the arc
+        const labelX = arcCenterX + arcRadiusPixels * Math.cos(Math.PI / 4);
+        const labelY = arcCenterY - arcRadiusPixels * Math.sin(Math.PI / 4);
+        ctx.fillStyle = 'rgba(255, 100, 255, 0.9)';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Computed Radius: ${computedRadius.toFixed(0)}mm`, labelX, labelY - 10);
     }
     
     // Mark coarse best result (red circle)
-    const coarseBestWidthIdx = widthValues.indexOf(coarseBestWidth);
-    const coarseBestHeightIdx = heightValues.indexOf(coarseBestHeight);
-    if (coarseBestWidthIdx >= 0 && coarseBestHeightIdx >= 0) {
-        const x = padding + (coarseBestWidthIdx + 0.5) * cellWidth;
-        const y = padding + (heightValues.length - 1 - coarseBestHeightIdx + 0.5) * cellHeight;
-        ctx.strokeStyle = '#ff0000';
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(x, y, 15, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.stroke();
-    }
+    const coarseBestX = toCanvasX(coarseBestWidth);
+    const coarseBestY = toCanvasY(coarseBestHeight);
+    ctx.strokeStyle = '#ff0000';
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(coarseBestX, coarseBestY, 15, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
     
     // Mark final result (green X)
-    // Find closest point in grid
-    let closestWidthIdx = 0;
-    let closestHeightIdx = 0;
-    let minWidthDist = Infinity;
-    let minHeightDist = Infinity;
-    for (let i = 0; i < widthValues.length; i++) {
-        const dist = Math.abs(widthValues[i] - finalWidth);
-        if (dist < minWidthDist) {
-            minWidthDist = dist;
-            closestWidthIdx = i;
-        }
-    }
-    for (let i = 0; i < heightValues.length; i++) {
-        const dist = Math.abs(heightValues[i] - finalHeight);
-        if (dist < minHeightDist) {
-            minHeightDist = dist;
-            closestHeightIdx = i;
-        }
-    }
-    
-    const finalX = padding + (closestWidthIdx + 0.5) * cellWidth;
-    const finalY = padding + (heightValues.length - 1 - closestHeightIdx + 0.5) * cellHeight;
+    const finalX = toCanvasX(finalWidth);
+    const finalY = toCanvasY(finalHeight);
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 3;
     const crossSize = 12;
@@ -1772,10 +1799,9 @@ function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, 
     
     // X-axis (Width)
     ctx.fillText('Width (mm)', padding + plotWidth / 2, height - 20);
-    for (let i = 0; i < widthValues.length; i += 2) {
-        const x = padding + (i + 0.5) * cellWidth;
-        ctx.fillText(widthValues[i].toString(), x, height - 40);
-    }
+    ctx.fillText(minWidth.toFixed(0), padding, height - 40);
+    ctx.fillText(maxWidth.toFixed(0), padding + plotWidth, height - 40);
+    ctx.fillText(((minWidth + maxWidth) / 2).toFixed(0), padding + plotWidth / 2, height - 40);
     
     // Y-axis (Height)
     ctx.save();
@@ -1785,15 +1811,14 @@ function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, 
     ctx.restore();
     
     ctx.textAlign = 'right';
-    for (let i = 0; i < heightValues.length; i += 2) {
-        const y = padding + (heightValues.length - 1 - i + 0.5) * cellHeight;
-        ctx.fillText(heightValues[i].toString(), padding - 10, y + 5);
-    }
+    ctx.fillText(minHeight.toFixed(0), padding - 10, padding + plotHeight + 5);
+    ctx.fillText(maxHeight.toFixed(0), padding - 10, padding + 5);
+    ctx.fillText(((minHeight + maxHeight) / 2).toFixed(0), padding - 10, padding + plotHeight / 2);
     
     // Draw legend
     const legendX = width - legendWidth + 20;
     const legendY = padding;
-    const legendHeight = plotHeight;
+    const legendHeight = plotHeight * 0.6;
     const legendBarWidth = 30;
     
     ctx.font = 'bold 14px sans-serif';
@@ -1833,62 +1858,100 @@ function renderFitnessLandscape(canvas, fitnessData, widthValues, heightValues, 
     ctx.fillText(((minFitness + maxFitness) / 2).toFixed(2), legendX + legendBarWidth + 5, legendY + legendHeight / 2);
     
     // Draw legend for markers
-    ctx.font = '12px sans-serif';
-    const markerLegendY = height - 120;
+    ctx.font = '11px sans-serif';
+    const markerLegendY = legendY + legendHeight + 40;
+    
+    // Arc legend
+    ctx.strokeStyle = 'rgba(255, 100, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.arc(legendX + 10, markerLegendY, 8, 0, Math.PI / 2, false);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText('Computed Arc', legendX + 25, markerLegendY + 5);
     
     // Red circle for coarse best
     ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
     ctx.strokeStyle = '#ff0000';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(legendX + 10, markerLegendY, 8, 0, 2 * Math.PI);
+    ctx.arc(legendX + 10, markerLegendY + 30, 8, 0, 2 * Math.PI);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'left';
-    ctx.fillText('Coarse Best', legendX + 25, markerLegendY + 5);
-    ctx.fillText(`(${coarseBestWidth}×${coarseBestHeight}mm)`, legendX + 25, markerLegendY + 20);
+    ctx.fillText('Coarse Best', legendX + 25, markerLegendY + 35);
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`(${coarseBestWidth}×${coarseBestHeight}mm)`, legendX + 25, markerLegendY + 48);
     
     // Green X for final result
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
     const xSize = 8;
     ctx.beginPath();
-    ctx.moveTo(legendX + 10 - xSize, markerLegendY + 50 - xSize);
-    ctx.lineTo(legendX + 10 + xSize, markerLegendY + 50 + xSize);
-    ctx.moveTo(legendX + 10 + xSize, markerLegendY + 50 - xSize);
-    ctx.lineTo(legendX + 10 - xSize, markerLegendY + 50 + xSize);
+    ctx.moveTo(legendX + 10 - xSize, markerLegendY + 70 - xSize);
+    ctx.lineTo(legendX + 10 + xSize, markerLegendY + 70 + xSize);
+    ctx.moveTo(legendX + 10 + xSize, markerLegendY + 70 - xSize);
+    ctx.lineTo(legendX + 10 - xSize, markerLegendY + 70 + xSize);
     ctx.stroke();
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('Final Result', legendX + 25, markerLegendY + 55);
-    ctx.fillText(`(${finalWidth}×${finalHeight}mm)`, legendX + 25, markerLegendY + 70);
+    ctx.font = '11px sans-serif';
+    ctx.fillText('Final Result', legendX + 25, markerLegendY + 75);
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`(${finalWidth}×${finalHeight}mm)`, legendX + 25, markerLegendY + 88);
 }
 
-function setupFitnessLandscapeControls(canvas, fitnessData, widthValues, heightValues, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight) {
+function setupFitnessLandscapeControls(canvas, allPoints, coarseBestWidth, coarseBestHeight, finalWidth, finalHeight, computedRadius, showRefinementPhases) {
     // Add click handler to show fitness value at clicked point
     canvas.onclick = function(e) {
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
         
         const padding = 80;
         const legendWidth = 150;
         const plotWidth = canvas.width - 2 * padding - legendWidth;
         const plotHeight = canvas.height - 2 * padding;
         
-        if (x >= padding && x <= padding + plotWidth && y >= padding && y <= padding + plotHeight) {
-            const cellWidth = plotWidth / widthValues.length;
-            const cellHeight = plotHeight / heightValues.length;
+        if (clickX >= padding && clickX <= padding + plotWidth && clickY >= padding && clickY <= padding + plotHeight) {
+            // Find data bounds
+            let minWidth = Infinity, maxWidth = -Infinity;
+            let minHeight = Infinity, maxHeight = -Infinity;
             
-            const widthIdx = Math.floor((x - padding) / cellWidth);
-            const heightIdx = heightValues.length - 1 - Math.floor((y - padding) / cellHeight);
+            for (const point of allPoints) {
+                if (point.width < minWidth) minWidth = point.width;
+                if (point.width > maxWidth) maxWidth = point.width;
+                if (point.height < minHeight) minHeight = point.height;
+                if (point.height > maxHeight) maxHeight = point.height;
+            }
             
-            if (widthIdx >= 0 && widthIdx < widthValues.length && heightIdx >= 0 && heightIdx < heightValues.length) {
-                const data = fitnessData[heightIdx][widthIdx];
-                console.log(`Clicked: ${data.width}×${data.height}mm`);
-                console.log(`  Raw fitness: ${data.rawFitness.toFixed(6)}`);
-                console.log(`  Display fitness: ${data.displayFitness.toFixed(4)}`);
-                alert(`Dimensions: ${data.width}×${data.height}mm\nRaw fitness: ${data.rawFitness.toFixed(6)}\nDisplay fitness (1/raw): ${data.displayFitness.toFixed(4)}`);
+            // Convert click position to data coordinates
+            const dataWidth = minWidth + ((clickX - padding) / plotWidth) * (maxWidth - minWidth);
+            const dataHeight = maxHeight - ((clickY - padding) / plotHeight) * (maxHeight - minHeight);
+            
+            // Find closest point
+            let closestPoint = null;
+            let minDist = Infinity;
+            
+            for (const point of allPoints) {
+                const dist = Math.sqrt(
+                    Math.pow(point.width - dataWidth, 2) + 
+                    Math.pow(point.height - dataHeight, 2)
+                );
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestPoint = point;
+                }
+            }
+            
+            if (closestPoint && minDist < 500) { // Within 500mm
+                console.log(`Clicked: ${closestPoint.width}×${closestPoint.height}mm`);
+                console.log(`  Phase: ${closestPoint.phase}`);
+                console.log(`  Raw fitness: ${closestPoint.rawFitness.toFixed(6)}`);
+                console.log(`  Display fitness: ${closestPoint.displayFitness.toFixed(4)}`);
+                alert(`Dimensions: ${closestPoint.width}×${closestPoint.height}mm\nPhase: ${closestPoint.phase}\nRaw fitness: ${closestPoint.rawFitness.toFixed(6)}\nDisplay fitness (1/raw): ${closestPoint.displayFitness.toFixed(4)}`);
             }
         }
     };
