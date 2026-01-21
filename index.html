@@ -1774,7 +1774,6 @@ function findMaxFitness(initialGuess, measurements) {
                 messagesBox.value += '\nMaslow_blY: ' + bestGuess.bl.y.toFixed(1);
                 messagesBox.value += '\nMaslow_brX: ' + bestGuess.br.x.toFixed(1);
                 messagesBox.value += '\nMaslow_brY: ' + bestGuess.br.y.toFixed(1);
-                messagesBox.scrollTop
                 messagesBox.scrollTop = messagesBox.scrollHeight;
                 // sendCommand('$/Maslow_tlX=' + bestGuess.tl.x.toFixed(1));
                 // sendCommand('$/Maslow_tlY=' + bestGuess.tl.y.toFixed(1));
@@ -1789,7 +1788,6 @@ function findMaxFitness(initialGuess, measurements) {
 
                 messagesBox.value += '\nThese values have been automatically saved for you.';
                 messagesBox.value += "\nYou MUST restart your machine for them to take effect...I know that is annoying, it's getting fixed ASAP. ";
-                messagesBox.scrollTop
                 messagesBox.scrollTop = messagesBox.scrollHeight;
 
                 //This restarts the esp32 to prevent you from trying to move the machine after calibration
@@ -1818,7 +1816,6 @@ function findMaxFitness(initialGuess, measurements) {
                 initialGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
                 initialGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
                 initialGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
-                initialGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
 
                 // Reset the counters
                 stagnantCounter = 0;
