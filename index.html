@@ -1117,30 +1117,48 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `  Exhaustive best: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
     messagesBox.value += `  Ternary best:    ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
     
+    // Determine which method found better result (lower fitness is better)
+    let finalBestSize, finalBestFitness, searchMethodUsed;
+    
     if (exhaustiveBestSize === diagonalBestSize) {
         messagesBox.value += `  ✓ Ternary search found the same optimum as exhaustive search!\n`;
         console.log(`\n✓ VALIDATION: Ternary search found the same optimum as exhaustive search!`);
+        finalBestSize = exhaustiveBestSize;
+        finalBestFitness = exhaustiveBestFitness;
+        searchMethodUsed = "both (agreed)";
     } else {
         const fitnessDiff = Math.abs(exhaustiveBestFitness - diagonalBestFitness);
         const sizeDiff = Math.abs(exhaustiveBestSize - diagonalBestSize);
         messagesBox.value += `  ⚠ Different results: Size differs by ${sizeDiff}mm, fitness differs by ${fitnessDiff.toFixed(6)}\n`;
-        messagesBox.value += `  → Using exhaustive search result (${exhaustiveBestSize}mm) as it finds the true global optimum\n`;
         console.log(`\n⚠ VALIDATION: Different results found!`);
         console.log(`  Exhaustive: ${exhaustiveBestSize}mm (fitness: ${exhaustiveBestFitness.toFixed(6)})`);
         console.log(`  Ternary:    ${diagonalBestSize}mm (fitness: ${diagonalBestFitness.toFixed(6)})`);
         console.log(`  Difference: ${sizeDiff}mm size, ${fitnessDiff.toFixed(6)} fitness`);
-        console.log(`  → Using exhaustive search result as it has better fitness`);
+        
+        // Use whichever method found better fitness (lower is better)
+        if (exhaustiveBestFitness < diagonalBestFitness) {
+            finalBestSize = exhaustiveBestSize;
+            finalBestFitness = exhaustiveBestFitness;
+            searchMethodUsed = "exhaustive";
+            messagesBox.value += `  → Using exhaustive search result (${exhaustiveBestSize}mm) as it has better fitness (${exhaustiveBestFitness.toFixed(6)} < ${diagonalBestFitness.toFixed(6)})\n`;
+            console.log(`  → Using exhaustive search result as it has better fitness`);
+        } else {
+            finalBestSize = diagonalBestSize;
+            finalBestFitness = diagonalBestFitness;
+            searchMethodUsed = "ternary";
+            messagesBox.value += `  → Using ternary search result (${diagonalBestSize}mm) as it has better fitness (${diagonalBestFitness.toFixed(6)} < ${exhaustiveBestFitness.toFixed(6)})\n`;
+            console.log(`  → Using ternary search result as it has better fitness`);
+        }
     }
     messagesBox.value += `\n`;
     
-    // Use exhaustive search result since it finds the true global optimum
-    // The ternary search can get trapped in local minima
-    const finalBestSize = exhaustiveBestSize;
-    const finalBestFitness = exhaustiveBestFitness;
-    
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using exhaustive search (${exhaustiveTestCount} evaluations)\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using ${searchMethodUsed} search\n`;
     messagesBox.value += `  Best fitness: ${finalBestFitness.toFixed(6)} (display: ${(1/finalBestFitness).toFixed(4)})\n`;
-    messagesBox.value += `  Note: Ternary search found ${diagonalBestSize}mm but exhaustive search found better optimum at ${finalBestSize}mm\n`;
+    if (searchMethodUsed === "exhaustive") {
+        messagesBox.value += `  Note: Exhaustive search (${exhaustiveTestCount} evaluations) found better optimum than ternary (${phase1TestCount} evaluations)\n`;
+    } else if (searchMethodUsed === "ternary") {
+        messagesBox.value += `  Note: Ternary search (${phase1TestCount} evaluations) was sufficient, exhaustive confirmed or found worse\n`;
+    }
     
     // Add summary table to messages box
     messagesBox.value += `\nAll diagonal values tested (sorted by size):\n`;
