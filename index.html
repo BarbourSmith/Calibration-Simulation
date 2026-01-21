@@ -1696,13 +1696,38 @@ function findMaxFitness(initialGuess, measurements) {
             //Clear the canvass
             clearCanvas();
 
+            // DEBUG: Log state before computation
+            if (totalCounter === 0 || totalCounter % 100 === 0) {
+                console.log(`[DEBUG] Iteration ${totalCounter}: BEFORE computeLinesFitness`);
+                console.log(`  - currentGuess.fitness (raw): ${currentGuess.fitness}`);
+                console.log(`  - currentGuess.fitness (display): ${(1/currentGuess.fitness).toFixed(7)}`);
+                console.log(`  - bestGuess.fitness (display): ${(1/bestGuess.fitness).toFixed(7)}`);
+                console.log(`  - stagnantCounter: ${stagnantCounter}`);
+            }
+
             currentGuess = computeLinesFitness(measurements, currentGuess);
             
+            // DEBUG: Log state after computation
+            if (totalCounter === 0 || totalCounter % 100 === 0) {
+                console.log(`[DEBUG] Iteration ${totalCounter}: AFTER computeLinesFitness`);
+                console.log(`  - NEW currentGuess.fitness (raw): ${currentGuess.fitness}`);
+                console.log(`  - NEW currentGuess.fitness (display): ${(1/currentGuess.fitness).toFixed(7)}`);
+                console.log(`  - currentGuess position: tl(${currentGuess.tl.x.toFixed(1)}, ${currentGuess.tl.y.toFixed(1)}), tr(${currentGuess.tr.x.toFixed(1)}, ${currentGuess.tr.y.toFixed(1)})`);
+            }
+            
             if (1/currentGuess.fitness > 1/bestGuess.fitness) {
+                // DEBUG: Log when improvement found
+                if (totalCounter % 10 === 0 || totalCounter < 10) {
+                    console.log(`[DEBUG] ✓ IMPROVEMENT at iteration ${totalCounter}: ${(1/bestGuess.fitness).toFixed(7)} → ${(1/currentGuess.fitness).toFixed(7)}`);
+                }
                 bestGuess = JSON.parse(JSON.stringify(currentGuess));
                 stagnantCounter = 0;
             } else {
                 stagnantCounter++;
+                // DEBUG: Log stagnation
+                if (totalCounter === 0 || totalCounter % 100 === 0) {
+                    console.log(`[DEBUG] ✗ NO improvement at iteration ${totalCounter}, stagnantCounter now: ${stagnantCounter}`);
+                }
             }
             totalCounter++;
             
@@ -1811,6 +1836,10 @@ function findMaxFitness(initialGuess, measurements) {
                 messagesBox.value += '\n Restarting...';
                 messagesBox.scrollTop = messagesBox.scrollHeight;
 
+                console.log(`\n[DEBUG] ====== RETRY ${lowFitnessRetryCount + 1} STARTING ======`);
+                console.log(`[DEBUG] Previous attempt ended with fitness: ${currentFitness.toFixed(7)}`);
+                console.log(`[DEBUG] Previous position: tl(${bestGuess.tl.x.toFixed(1)}, ${bestGuess.tl.y.toFixed(1)}), tr(${bestGuess.tr.x.toFixed(1)}, ${bestGuess.tr.y.toFixed(1)}), br(${bestGuess.br.x.toFixed(1)})`);
+
                 // Clear theta values from measurements to allow fresh optimization
                 measurements.forEach(measurement => {
                     delete measurement.tlTheta;
@@ -1818,6 +1847,7 @@ function findMaxFitness(initialGuess, measurements) {
                     delete measurement.blTheta;
                     delete measurement.brTheta;
                 });
+                console.log(`[DEBUG] Cleared theta values from ${measurements.length} measurements`);
 
                 // Add ±200 to each of the corner anchor points and try again
                 initialGuess.tl.x = bestGuess.tl.x + Math.random() * 400 - 200;
@@ -1829,6 +1859,9 @@ function findMaxFitness(initialGuess, measurements) {
                 // Reset fitness to force recomputation
                 initialGuess.fitness = 100000000;
 
+                console.log(`[DEBUG] New randomized position: tl(${initialGuess.tl.x.toFixed(1)}, ${initialGuess.tl.y.toFixed(1)}), tr(${initialGuess.tr.x.toFixed(1)}, ${initialGuess.tr.y.toFixed(1)}), br(${initialGuess.br.x.toFixed(1)})`);
+                console.log(`[DEBUG] Reset fitness to: ${initialGuess.fitness} (raw)`);
+
                 // Reset the counters
                 stagnantCounter = 0;
                 totalCounter = 0;
@@ -1836,6 +1869,10 @@ function findMaxFitness(initialGuess, measurements) {
                 // Try again with different starting conditions
                 bestGuess = JSON.parse(JSON.stringify(initialGuess));
                 currentGuess = JSON.parse(JSON.stringify(initialGuess));
+
+                console.log(`[DEBUG] After copying: bestGuess.fitness = ${bestGuess.fitness} (raw), currentGuess.fitness = ${currentGuess.fitness} (raw)`);
+                console.log(`[DEBUG] Reset counters: stagnantCounter = ${stagnantCounter}, totalCounter = ${totalCounter}`);
+                console.log(`[DEBUG] ====== RETRY ${lowFitnessRetryCount + 1} READY TO START ======\n`);
 
                 // Restart the iteration
                 setTimeout(iterate, 0);
