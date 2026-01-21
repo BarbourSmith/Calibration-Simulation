@@ -1005,11 +1005,14 @@ async function findBestRectangularStart(measurements) {
         searchStatus.textContent = `Phase 1A: Testing ${diagonal.name} diagonal...`;
         
         // Helper function to create corners at this diagonal angle
-        function createCornersAtAngle(radius) {
-            // For a given radius from origin, calculate width and height
-            // based on the diagonal angle
-            const width = radius * Math.cos(diagonal.angle * Math.PI / 180);
-            const height = radius * Math.sin(diagonal.angle * Math.PI / 180);
+        // size parameter represents the smaller dimension (for consistency with original approach)
+        function createCornersAtAngle(size) {
+            // Calculate width and height based on the diagonal angle
+            // For 22.5°: wide frame (height = size, width = size / tan(22.5°))
+            // For 45°: square frame (height = size, width = size)
+            // For 67.5°: tall frame (height = size, width = size / tan(67.5°))
+            const width = size / Math.tan(diagonal.angle * Math.PI / 180);
+            const height = size;
             return {
                 tl: {x: 0, y: height},
                 tr: {x: width, y: height},
@@ -1129,9 +1132,9 @@ async function findBestRectangularStart(measurements) {
         
         messagesBox.value += `  ${diagonal.name} refined: ${refinedBestSize}mm (fitness: ${refinedBestFitness.toFixed(6)})\n`;
         
-        // Calculate optimal radius (distance from origin to diagonal point)
-        const width = refinedBestSize * Math.cos(diagonal.angle * Math.PI / 180);
-        const height = refinedBestSize * Math.sin(diagonal.angle * Math.PI / 180);
+        // Calculate optimal radius (distance from origin to top-right corner)
+        const width = refinedBestSize / Math.tan(diagonal.angle * Math.PI / 180);
+        const height = refinedBestSize;
         const optimalRadius = Math.sqrt(width * width + height * height);
         
         // Store results for this diagonal
