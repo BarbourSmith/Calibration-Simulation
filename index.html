@@ -1498,6 +1498,16 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
         maxFitness = Math.max(maxFitness, point.fitness);
     }
     
+    // Calculate center of tested points for proper centering
+    let centerWidth = 0;
+    let centerHeight = 0;
+    for (const point of testedPoints) {
+        centerWidth += point.width;
+        centerHeight += point.height;
+    }
+    centerWidth /= testedPoints.length;
+    centerHeight /= testedPoints.length;
+    
     // Project 3D points to 2D using isometric projection
     function project3D(x, y, z) {
         const angleX = surfaceMapState.rotationX * Math.PI / 180;
@@ -1522,8 +1532,8 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     
     // Project all points and sort by Z for proper rendering order
     const projectedPoints = testedPoints.map(point => {
-        const x = point.width - 2500;
-        const y = point.height - 2500;
+        const x = point.width - centerWidth;
+        const y = point.height - centerHeight;
         const z = ((point.fitness - minFitness) / (maxFitness - minFitness)) * 1000;
         const projected = project3D(x, y, z);
         const normalized = (point.fitness - minFitness) / (maxFitness - minFitness);
@@ -1571,8 +1581,8 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
             Math.abs(p.height - bestGuess.tr.y) < 0.1
         );
         if (bestPoint) {
-            const x = bestPoint.width - 2500;
-            const y = bestPoint.height - 2500;
+            const x = bestPoint.width - centerWidth;
+            const y = bestPoint.height - centerHeight;
             const z = ((bestPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 50;
             const p = project3D(x, y, z);
             
@@ -1588,7 +1598,7 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     
     // Draw 3D axes
     const axisLength = 500;
-    const axisOrigin = { x: -2500, y: -2500, z: 0 };
+    const axisOrigin = { x: -centerWidth, y: -centerHeight, z: 0 };
     
     // X axis (Width) - Red
     const xAxisStart = project3D(axisOrigin.x, axisOrigin.y, axisOrigin.z);
