@@ -1763,20 +1763,19 @@ function findMaxFitness(initialGuess, measurements) {
                 messagesBox.value += ' Retry ' + lowFitnessRetryCount + '/' + MAX_LOW_FITNESS_RETRIES + '...';
             }
 
-            messagesBox.value += '\nCalibration complete \nCalibration values:';
-            messagesBox.value += '\nFitness: ' + currentFitness.toFixed(7);
-            messagesBox.value += '\nMaslow_tlX: ' + bestGuess.tl.x.toFixed(1);
-            messagesBox.value += '\nMaslow_tlY: ' + bestGuess.tl.y.toFixed(1);
-            messagesBox.value += '\nMaslow_trX: ' + bestGuess.tr.x.toFixed(1);
-            messagesBox.value += '\nMaslow_trY: ' + bestGuess.tr.y.toFixed(1);
-            messagesBox.value += '\nMaslow_blX: ' + bestGuess.bl.x.toFixed(1);
-            messagesBox.value += '\nMaslow_blY: ' + bestGuess.bl.y.toFixed(1);
-            messagesBox.value += '\nMaslow_brX: ' + bestGuess.br.x.toFixed(1);
-            messagesBox.value += '\nMaslow_brY: ' + bestGuess.br.y.toFixed(1);
-            messagesBox.scrollTop
-            messagesBox.scrollTop = messagesBox.scrollHeight;
-
-            if(1/bestGuess.fitness > acceptableCalibrationThreshold){
+            if(currentFitness > acceptableCalibrationThreshold){
+                messagesBox.value += '\nCalibration complete \nCalibration values:';
+                messagesBox.value += '\nFitness: ' + currentFitness.toFixed(7);
+                messagesBox.value += '\nMaslow_tlX: ' + bestGuess.tl.x.toFixed(1);
+                messagesBox.value += '\nMaslow_tlY: ' + bestGuess.tl.y.toFixed(1);
+                messagesBox.value += '\nMaslow_trX: ' + bestGuess.tr.x.toFixed(1);
+                messagesBox.value += '\nMaslow_trY: ' + bestGuess.tr.y.toFixed(1);
+                messagesBox.value += '\nMaslow_blX: ' + bestGuess.bl.x.toFixed(1);
+                messagesBox.value += '\nMaslow_blY: ' + bestGuess.bl.y.toFixed(1);
+                messagesBox.value += '\nMaslow_brX: ' + bestGuess.br.x.toFixed(1);
+                messagesBox.value += '\nMaslow_brY: ' + bestGuess.br.y.toFixed(1);
+                messagesBox.scrollTop
+                messagesBox.scrollTop = messagesBox.scrollHeight;
                 // sendCommand('$/Maslow_tlX=' + bestGuess.tl.x.toFixed(1));
                 // sendCommand('$/Maslow_tlY=' + bestGuess.tl.y.toFixed(1));
                 // sendCommand('$/Maslow_trX=' + bestGuess.tr.x.toFixed(1));
@@ -1819,6 +1818,7 @@ function findMaxFitness(initialGuess, measurements) {
                 initialGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
                 initialGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
                 initialGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
+                initialGuess.br.y = bestGuess.br.y + Math.random() * 100 - 50;
 
                 // Reset the counters
                 stagnantCounter = 0;
