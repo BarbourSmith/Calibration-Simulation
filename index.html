@@ -1114,51 +1114,138 @@ async function findBestRectangularStart(measurements) {
     
     // Add exhaustive search results to messages box
     messagesBox.value += `\nExhaustive search complete: Tested ${exhaustiveTestCount} points (every 50mm)\n`;
-    messagesBox.value += `  Exhaustive best: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
-    messagesBox.value += `  Ternary best:    ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
+    messagesBox.value += `  Coarse best: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
+    messagesBox.value += `  Ternary (initial): ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
     
-    // Determine which method found better result (lower fitness is better)
-    let finalBestSize, finalBestFitness, searchMethodUsed;
+    // PHASE 1B: Refine exhaustive search result with ternary search
+    // Use exhaustive result as starting point for high-precision refinement
+    console.log(`\n=== PHASE 1B: TERNARY REFINEMENT FROM EXHAUSTIVE RESULT ===`);
+    messagesBox.value += `\nPhase 1B: Refining exhaustive result (${exhaustiveBestSize}mm) with ternary search...\n`;
+    searchStatus.textContent = `Phase 1B: Refining exhaustive result with ternary search...`;
     
-    if (exhaustiveBestSize === diagonalBestSize) {
-        messagesBox.value += `  ✓ Ternary search found the same optimum as exhaustive search!\n`;
-        console.log(`\n✓ VALIDATION: Ternary search found the same optimum as exhaustive search!`);
-        finalBestSize = exhaustiveBestSize;
-        finalBestFitness = exhaustiveBestFitness;
-        searchMethodUsed = "both (agreed)";
-    } else {
-        const fitnessDiff = Math.abs(exhaustiveBestFitness - diagonalBestFitness);
-        const sizeDiff = Math.abs(exhaustiveBestSize - diagonalBestSize);
-        messagesBox.value += `  ⚠ Different results: Size differs by ${sizeDiff}mm, fitness differs by ${fitnessDiff.toFixed(6)}\n`;
-        console.log(`\n⚠ VALIDATION: Different results found!`);
-        console.log(`  Exhaustive: ${exhaustiveBestSize}mm (fitness: ${exhaustiveBestFitness.toFixed(6)})`);
-        console.log(`  Ternary:    ${diagonalBestSize}mm (fitness: ${diagonalBestFitness.toFixed(6)})`);
-        console.log(`  Difference: ${sizeDiff}mm size, ${fitnessDiff.toFixed(6)} fitness`);
+    // Set up refinement search range around exhaustive best (±50mm to cover the gap)
+    let refineLeftSize = Math.max(100, exhaustiveBestSize - 50);
+    let refineRightSize = Math.min(5000, exhaustiveBestSize + 50);
+    const refinePrecision = 1; // Higher precision - stop when range is less than 1mm
+    
+    let refinedBestFitness = exhaustiveBestFitness;
+    let refinedBestSize = exhaustiveBestSize;
+    let refineTestCount = 0;
+    
+    console.log(`Starting refinement from exhaustive result: ${exhaustiveBestSize}mm`);
+    console.log(`Refinement search range: [${refineLeftSize}mm, ${refineRightSize}mm]`);
+    console.log(`Refinement precision target: ${refinePrecision}mm`);
+    console.log(`Note: Lower raw fitness is better\n`);
+    
+    let refineIteration = 0;
+    while (refineRightSize - refineLeftSize > refinePrecision) {
+        refineIteration++;
+        const leftThird = refineLeftSize + (refineRightSize - refineLeftSize) / 3;
+        const rightThird = refineRightSize - (refineRightSize - refineLeftSize) / 3;
         
-        // Use whichever method found better fitness (lower is better)
-        if (exhaustiveBestFitness < diagonalBestFitness) {
-            finalBestSize = exhaustiveBestSize;
-            finalBestFitness = exhaustiveBestFitness;
-            searchMethodUsed = "exhaustive";
-            messagesBox.value += `  → Using exhaustive search result (${exhaustiveBestSize}mm) as it has better fitness (${exhaustiveBestFitness.toFixed(6)} < ${diagonalBestFitness.toFixed(6)})\n`;
-            console.log(`  → Using exhaustive search result as it has better fitness`);
+        console.log(`\n--- Refinement Iteration ${refineIteration} ---`);
+        console.log(`Current range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm] (width: ${(refineRightSize - refineLeftSize).toFixed(2)}mm)`);
+        console.log(`Testing left third: ${Math.round(leftThird)}mm and right third: ${Math.round(rightThird)}mm`);
+        
+        // Evaluate left third
+        const leftSize = Math.round(leftThird);
+        const leftGuess = {
+            tl: {x: 0, y: leftSize},
+            tr: {x: leftSize, y: leftSize},
+            bl: {x: 0, y: 0},
+            br: {x: leftSize, y: 0},
+            fitness: 0
+        };
+        const leftResult = computeLinesFitness(measurementsCopy, leftGuess, true);
+        refineTestCount++;
+        console.log(`[Refinement Test #${refineTestCount}] Size: ${leftSize}mm, Raw Fitness: ${leftResult.fitness.toFixed(6)}`);
+        
+        // Evaluate right third
+        const rightSize = Math.round(rightThird);
+        const rightGuess = {
+            tl: {x: 0, y: rightSize},
+            tr: {x: rightSize, y: rightSize},
+            bl: {x: 0, y: 0},
+            br: {x: rightSize, y: 0},
+            fitness: 0
+        };
+        const rightResult = computeLinesFitness(measurementsCopy, rightGuess, true);
+        refineTestCount++;
+        console.log(`[Refinement Test #${refineTestCount}] Size: ${rightSize}mm, Raw Fitness: ${rightResult.fitness.toFixed(6)}`);
+        
+        console.log(`Comparison: Left (${leftResult.fitness.toFixed(6)}) ${leftResult.fitness < rightResult.fitness ? '<' : '>='} Right (${rightResult.fitness.toFixed(6)})`);
+        
+        // Track best
+        if (leftResult.fitness < refinedBestFitness) {
+            refinedBestFitness = leftResult.fitness;
+            refinedBestSize = leftSize;
+            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
+        }
+        if (rightResult.fitness < refinedBestFitness) {
+            refinedBestFitness = rightResult.fitness;
+            refinedBestSize = rightSize;
+            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
+        }
+        
+        // Update progress
+        searchStatus.textContent = `Phase 1B: Ternary refinement (${refineTestCount} tested) - Best: ${refinedBestSize}mm`;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+        // Narrow search range
+        if (leftResult.fitness < rightResult.fitness) {
+            console.log(`Decision: Narrowing to LEFT (discarding [${rightThird.toFixed(2)}, ${refineRightSize.toFixed(2)}])`);
+            refineRightSize = rightThird;
         } else {
-            finalBestSize = diagonalBestSize;
-            finalBestFitness = diagonalBestFitness;
-            searchMethodUsed = "ternary";
-            messagesBox.value += `  → Using ternary search result (${diagonalBestSize}mm) as it has better fitness (${diagonalBestFitness.toFixed(6)} < ${exhaustiveBestFitness.toFixed(6)})\n`;
-            console.log(`  → Using ternary search result as it has better fitness`);
+            console.log(`Decision: Narrowing to RIGHT (discarding [${refineLeftSize.toFixed(2)}, ${leftThird.toFixed(2)}])`);
+            refineLeftSize = leftThird;
         }
     }
+    
+    // Final evaluation at center
+    console.log(`\n--- Final Refinement Evaluation ---`);
+    console.log(`Converged to range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm]`);
+    const finalRefineSize = Math.round((refineLeftSize + refineRightSize) / 2);
+    console.log(`Testing final center point: ${finalRefineSize}mm`);
+    
+    const finalRefineGuess = {
+        tl: {x: 0, y: finalRefineSize},
+        tr: {x: finalRefineSize, y: finalRefineSize},
+        bl: {x: 0, y: 0},
+        br: {x: finalRefineSize, y: 0},
+        fitness: 0
+    };
+    const finalRefineResult = computeLinesFitness(measurementsCopy, finalRefineGuess, true);
+    refineTestCount++;
+    console.log(`[Refinement Test #${refineTestCount}] Size: ${finalRefineSize}mm, Raw Fitness: ${finalRefineResult.fitness.toFixed(6)}`);
+    
+    if (finalRefineResult.fitness < refinedBestFitness) {
+        refinedBestFitness = finalRefineResult.fitness;
+        refinedBestSize = finalRefineSize;
+        console.log(`  → Final point is the new refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
+    } else {
+        console.log(`  → Previous refined best remains: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
+    }
+    
+    console.log(`\n=== PHASE 1B REFINEMENT COMPLETE ===`);
+    console.log(`Refined diagonal size: ${refinedBestSize}mm`);
+    console.log(`Refined fitness: ${refinedBestFitness.toFixed(6)}`);
+    console.log(`Total refinement evaluations: ${refineTestCount}`);
+    console.log(`Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction from exhaustive result`);
+    
+    // Use refined result as final
+    const finalBestSize = refinedBestSize;
+    const finalBestFitness = refinedBestFitness;
+    
+    messagesBox.value += `\nRefinement complete:\n`;
+    messagesBox.value += `  Exhaustive coarse: ${exhaustiveBestSize}mm (fitness ${exhaustiveBestFitness.toFixed(6)})\n`;
+    messagesBox.value += `  Refined precise:   ${refinedBestSize}mm (fitness ${refinedBestFitness.toFixed(6)}) ✓\n`;
+    messagesBox.value += `  Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction\n`;
+    messagesBox.value += `  Total tests: ${exhaustiveTestCount} exhaustive + ${refineTestCount} refinement = ${exhaustiveTestCount + refineTestCount} evaluations\n`;
     messagesBox.value += `\n`;
     
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using ${searchMethodUsed} search\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using exhaustive+refinement search\n`;
     messagesBox.value += `  Best fitness: ${finalBestFitness.toFixed(6)} (display: ${(1/finalBestFitness).toFixed(4)})\n`;
-    if (searchMethodUsed === "exhaustive") {
-        messagesBox.value += `  Note: Exhaustive search (${exhaustiveTestCount} evaluations) found better optimum than ternary (${phase1TestCount} evaluations)\n`;
-    } else if (searchMethodUsed === "ternary") {
-        messagesBox.value += `  Note: Ternary search (${phase1TestCount} evaluations) was sufficient, exhaustive confirmed or found worse\n`;
-    }
+    messagesBox.value += `  Method: Exhaustive (50mm steps) → Ternary refinement (1mm precision)\n`;
     
     // Add summary table to messages box
     messagesBox.value += `\nAll diagonal values tested (sorted by size):\n`;
