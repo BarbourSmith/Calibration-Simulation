@@ -1808,7 +1808,8 @@ function findMaxFitness(initialGuess, measurements) {
                     guess: bestGuess
                 }, true);
 
-                messagesBox.value += '\n Restarting';
+                messagesBox.value += '\n Restarting...';
+                messagesBox.scrollTop = messagesBox.scrollHeight;
 
                 // Add ±50 to each of the corner anchor points and try again
                 initialGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
