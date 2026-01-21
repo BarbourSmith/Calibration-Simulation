@@ -1073,7 +1073,6 @@ async function findBestRectangularStart(measurements) {
     
     // Test every 50mm from 100 to 5000
     for (let size = 100; size <= 5000; size += 50) {
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
             tl: {x: 0, y: size},
             tr: {x: size, y: size},
@@ -1082,7 +1081,7 @@ async function findBestRectangularStart(measurements) {
             fitness: 0
         };
         
-        const result = computeLinesFitness(testMeasurements, guess, true);
+        const result = computeLinesFitness(measurementsCopy, guess, true);
         exhaustiveResults.push({size, rawFitness: result.fitness, displayFitness: 1/result.fitness});
         exhaustiveTestCount++;
         
@@ -1091,10 +1090,10 @@ async function findBestRectangularStart(measurements) {
             exhaustiveBestSize = size;
         }
         
-        // Update progress every 10 tests
+        // Update progress UI every 10 tests (minimal delay for responsiveness)
         if (exhaustiveTestCount % 10 === 0) {
             searchStatus.textContent = `Exhaustive search: ${exhaustiveTestCount} tested (${size}mm)`;
-            await new Promise(resolve => setTimeout(resolve, 1));
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
     }
     
