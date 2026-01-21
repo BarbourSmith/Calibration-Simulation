@@ -1038,167 +1038,132 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `  Estimated dimensions: ${estWidth}mm × ${estHeight}mm\n`;
     messagesBox.value += `\n`;
     
-    // PHASE 1: Search for best frame dimensions using sequential 1D searches
-    // This is much faster than 2D search while still finding good results
-    console.log(`\n=== PHASE 1: SEQUENTIAL DIMENSION SEARCH ===`);
-    messagesBox.value += `Phase 1: Searching for optimal frame dimensions...\n`;
-    searchStatus.textContent = `Phase 1: Dimension search...`;
+    // PHASE 1: Coarse 2D grid search followed by local refinement
+    // This approach avoids local optima by testing the full parameter space first
+    console.log(`\n=== PHASE 1: COARSE 2D GRID SEARCH ===`);
+    messagesBox.value += `Phase 1: Searching for optimal frame dimensions using 2D grid...\n`;
+    searchStatus.textContent = `Phase 1: Coarse 2D grid search...`;
     
     let phase1TestCount = 0;
-    
-    // PHASE 1A: Find optimal width (holding height at estimate)
-    console.log(`\n=== PHASE 1A: WIDTH SEARCH (height fixed at ${estHeight}mm) ===`);
-    messagesBox.value += `Phase 1A: Searching for optimal width (height=${estHeight}mm)...\n`;
-    
     let bestWidth = estWidth;
-    let bestWidthFitness = Infinity;
+    let bestHeight = estHeight;
+    let bestFitness = Infinity;
     
-    // Broad coarse search for width
-    const widthCoarseMin = 1000;
-    const widthCoarseMax = 8000;
-    const widthCoarseStep = 200;
+    // PHASE 1A: Coarse 2D grid search to find the global optimum region
+    // Use larger steps to cover wide range efficiently (300mm steps)
+    // Expand width range to cover expected 4576mm width
+    const coarseWidthMin = 2000;
+    const coarseWidthMax = 7000;  // Increased to cover wider frames
+    const coarseHeightMin = 2000;
+    const coarseHeightMax = 6500;
+    const coarseStep = 300;
     
-    console.log(`Coarse width search: ${widthCoarseMin}mm to ${widthCoarseMax}mm (step ${widthCoarseStep}mm)`);
+    console.log(`\n=== PHASE 1A: COARSE GRID SEARCH ===`);
+    console.log(`Width range: ${coarseWidthMin}mm to ${coarseWidthMax}mm (step ${coarseStep}mm)`);
+    console.log(`Height range: ${coarseHeightMin}mm to ${coarseHeightMax}mm (step ${coarseStep}mm)`);
     
-    for (let w = widthCoarseMin; w <= widthCoarseMax; w += widthCoarseStep) {
-        const guess = {
-            tl: {x: 0, y: estHeight},
-            tr: {x: w, y: estHeight},
-            bl: {x: 0, y: 0},
-            br: {x: w, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        phase1TestCount++;
-        
-        if (result.fitness < bestWidthFitness) {
-            bestWidthFitness = result.fitness;
-            bestWidth = w;
-            console.log(`[Test #${phase1TestCount}] New best width: ${w}mm, fitness: ${result.fitness.toFixed(6)}`);
-        }
-        
-        if (phase1TestCount % 10 === 0) {
-            searchStatus.textContent = `Phase 1A: Width search (${phase1TestCount} tested) - Best: ${bestWidth}mm`;
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
+    const widthSteps = Math.floor((coarseWidthMax - coarseWidthMin) / coarseStep) + 1;
+    const heightSteps = Math.floor((coarseHeightMax - coarseHeightMin) / coarseStep) + 1;
+    const totalCoarseTests = widthSteps * heightSteps;
     
-    console.log(`\nCoarse width search complete: Best width = ${bestWidth}mm, fitness = ${bestWidthFitness.toFixed(6)}`);
+    console.log(`Total coarse tests: ${totalCoarseTests}`);
+    messagesBox.value += `Phase 1A: Coarse grid search (${coarseStep}mm steps, ~${totalCoarseTests} tests)...\n`;
     
-    // Fine width search
-    const widthFineMin = Math.max(1000, bestWidth - widthCoarseStep);
-    const widthFineMax = Math.min(10000, bestWidth + widthCoarseStep);
-    const widthFineStep = 50;
-    
-    console.log(`Fine width search: ${widthFineMin}mm to ${widthFineMax}mm (step ${widthFineStep}mm)`);
-    
-    for (let w = widthFineMin; w <= widthFineMax; w += widthFineStep) {
-        const guess = {
-            tl: {x: 0, y: estHeight},
-            tr: {x: w, y: estHeight},
-            bl: {x: 0, y: 0},
-            br: {x: w, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        phase1TestCount++;
-        
-        if (result.fitness < bestWidthFitness) {
-            bestWidthFitness = result.fitness;
-            bestWidth = w;
-            console.log(`[Test #${phase1TestCount}] New best width: ${w}mm, fitness: ${result.fitness.toFixed(6)}`);
+    for (let w = coarseWidthMin; w <= coarseWidthMax; w += coarseStep) {
+        for (let h = coarseHeightMin; h <= coarseHeightMax; h += coarseStep) {
+            const guess = {
+                tl: {x: 0, y: h},
+                tr: {x: w, y: h},
+                bl: {x: 0, y: 0},
+                br: {x: w, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurementsCopy, guess, true);
+            phase1TestCount++;
+            
+            if (result.fitness < bestFitness) {
+                bestFitness = result.fitness;
+                bestWidth = w;
+                bestHeight = h;
+                console.log(`[Test #${phase1TestCount}] New best: ${w}×${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+            }
+            
+            // Update progress every 20 tests
+            if (phase1TestCount % 20 === 0) {
+                const progress = (phase1TestCount / totalCoarseTests * 100).toFixed(1);
+                searchStatus.textContent = `Phase 1A: Coarse grid (${phase1TestCount}/${totalCoarseTests}, ${progress}%) - Best: ${bestWidth}×${bestHeight}mm`;
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
         }
     }
     
     console.log(`\n=== PHASE 1A COMPLETE ===`);
-    console.log(`Best width: ${bestWidth}mm, fitness: ${bestWidthFitness.toFixed(6)}`);
-    messagesBox.value += `Phase 1A complete: Best width = ${bestWidth}mm (fitness ${bestWidthFitness.toFixed(6)})\n`;
+    console.log(`Coarse search tested ${phase1TestCount} configurations`);
+    console.log(`Best coarse result: ${bestWidth}×${bestHeight}mm, fitness: ${bestFitness.toFixed(6)}`);
+    messagesBox.value += `Phase 1A complete: Best coarse result = ${bestWidth}×${bestHeight}mm (fitness ${bestFitness.toFixed(6)})\n`;
     
-    // PHASE 1B: Find optimal height (holding width at best found)
-    console.log(`\n=== PHASE 1B: HEIGHT SEARCH (width fixed at ${bestWidth}mm) ===`);
-    messagesBox.value += `Phase 1B: Searching for optimal height (width=${bestWidth}mm)...\n`;
+    // PHASE 1B: Medium refinement around best coarse result
+    // Search ±coarseStep around best result with medium steps (100mm)
+    console.log(`\n=== PHASE 1B: MEDIUM REFINEMENT ===`);
+    messagesBox.value += `Phase 1B: Medium refinement around ${bestWidth}×${bestHeight}mm...\n`;
     
-    let bestHeight = estHeight;
-    let bestHeightFitness = Infinity;
+    const mediumWidthMin = Math.max(2000, bestWidth - coarseStep);
+    const mediumWidthMax = Math.min(10000, bestWidth + coarseStep);
+    const mediumHeightMin = Math.max(2000, bestHeight - coarseStep);
+    const mediumHeightMax = Math.min(10000, bestHeight + coarseStep);
+    const mediumStep = 100;
     
-    // Broad coarse search for height
-    const heightCoarseMin = 1000;
-    const heightCoarseMax = 8000;
-    const heightCoarseStep = 200;
+    console.log(`Width range: ${mediumWidthMin}mm to ${mediumWidthMax}mm (step ${mediumStep}mm)`);
+    console.log(`Height range: ${mediumHeightMin}mm to ${mediumHeightMax}mm (step ${mediumStep}mm)`);
     
-    console.log(`Coarse height search: ${heightCoarseMin}mm to ${heightCoarseMax}mm (step ${heightCoarseStep}mm)`);
-    
-    for (let h = heightCoarseMin; h <= heightCoarseMax; h += heightCoarseStep) {
-        const guess = {
-            tl: {x: 0, y: h},
-            tr: {x: bestWidth, y: h},
-            bl: {x: 0, y: 0},
-            br: {x: bestWidth, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        phase1TestCount++;
-        
-        if (result.fitness < bestHeightFitness) {
-            bestHeightFitness = result.fitness;
-            bestHeight = h;
-            console.log(`[Test #${phase1TestCount}] New best height: ${h}mm, fitness: ${result.fitness.toFixed(6)}`);
-        }
-        
-        if (phase1TestCount % 10 === 0) {
-            searchStatus.textContent = `Phase 1B: Height search (${phase1TestCount} tested) - Best: ${bestHeight}mm`;
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
-    
-    console.log(`\nCoarse height search complete: Best height = ${bestHeight}mm, fitness = ${bestHeightFitness.toFixed(6)}`);
-    
-    // Fine height search
-    const heightFineMin = Math.max(1000, bestHeight - heightCoarseStep);
-    const heightFineMax = Math.min(10000, bestHeight + heightCoarseStep);
-    const heightFineStep = 50;
-    
-    console.log(`Fine height search: ${heightFineMin}mm to ${heightFineMax}mm (step ${heightFineStep}mm)`);
-    
-    for (let h = heightFineMin; h <= heightFineMax; h += heightFineStep) {
-        const guess = {
-            tl: {x: 0, y: h},
-            tr: {x: bestWidth, y: h},
-            bl: {x: 0, y: 0},
-            br: {x: bestWidth, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        phase1TestCount++;
-        
-        if (result.fitness < bestHeightFitness) {
-            bestHeightFitness = result.fitness;
-            bestHeight = h;
-            console.log(`[Test #${phase1TestCount}] New best height: ${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+    for (let w = mediumWidthMin; w <= mediumWidthMax; w += mediumStep) {
+        for (let h = mediumHeightMin; h <= mediumHeightMax; h += mediumStep) {
+            const guess = {
+                tl: {x: 0, y: h},
+                tr: {x: w, y: h},
+                bl: {x: 0, y: 0},
+                br: {x: w, y: 0},
+                fitness: 0
+            };
+            
+            const result = computeLinesFitness(measurementsCopy, guess, true);
+            phase1TestCount++;
+            
+            if (result.fitness < bestFitness) {
+                bestFitness = result.fitness;
+                bestWidth = w;
+                bestHeight = h;
+                console.log(`[Test #${phase1TestCount}] New best: ${w}×${h}mm, fitness: ${result.fitness.toFixed(6)}`);
+            }
         }
     }
     
     console.log(`\n=== PHASE 1B COMPLETE ===`);
-    console.log(`Best height: ${bestHeight}mm, fitness: ${bestHeightFitness.toFixed(6)}`);
-    messagesBox.value += `Phase 1B complete: Best height = ${bestHeight}mm (fitness ${bestHeightFitness.toFixed(6)})\n`;
+    console.log(`Best medium result: ${bestWidth}×${bestHeight}mm, fitness: ${bestFitness.toFixed(6)}`);
+    messagesBox.value += `Phase 1B complete: Best medium result = ${bestWidth}×${bestHeight}mm (fitness ${bestFitness.toFixed(6)})\n`;
     
-    // PHASE 1C: Final refinement with both dimensions variable
-    console.log(`\n=== PHASE 1C: FINAL REFINEMENT ===`);
-    messagesBox.value += `Phase 1C: Final refinement around ${bestWidth}×${bestHeight}mm...\n`;
+    // PHASE 1C: Fine local refinement
+    // Search ±150mm around best result with fine steps (25mm)
+    console.log(`\n=== PHASE 1C: FINE LOCAL REFINEMENT ===`);
+    messagesBox.value += `Phase 1C: Fine refinement around ${bestWidth}×${bestHeight}mm...\n`;
     
     let finalWidth = bestWidth;
     let finalHeight = bestHeight;
-    let finalFitness = Infinity;
+    let finalFitness = bestFitness;
     
-    const finalRange = 100;
-    const finalStep = 25;
+    const fineRange = 150;
+    const fineStep = 25;
+    const fineWidthMin = Math.max(2000, bestWidth - fineRange);
+    const fineWidthMax = Math.min(10000, bestWidth + fineRange);
+    const fineHeightMin = Math.max(2000, bestHeight - fineRange);
+    const fineHeightMax = Math.min(10000, bestHeight + fineRange);
     
-    for (let w = Math.max(1000, bestWidth - finalRange); w <= Math.min(10000, bestWidth + finalRange); w += finalStep) {
-        for (let h = Math.max(1000, bestHeight - finalRange); h <= Math.min(10000, bestHeight + finalRange); h += finalStep) {
+    console.log(`Width range: ${fineWidthMin}mm to ${fineWidthMax}mm (step ${fineStep}mm)`);
+    console.log(`Height range: ${fineHeightMin}mm to ${fineHeightMax}mm (step ${fineStep}mm)`);
+    
+    for (let w = fineWidthMin; w <= fineWidthMax; w += fineStep) {
+        for (let h = fineHeightMin; h <= fineHeightMax; h += fineStep) {
             const guess = {
                 tl: {x: 0, y: h},
                 tr: {x: w, y: h},
