@@ -1825,6 +1825,9 @@ function findMaxFitness(initialGuess, measurements) {
                 initialGuess.tr.x = bestGuess.tr.x + Math.random() * 400 - 200;
                 initialGuess.tr.y = bestGuess.tr.y + Math.random() * 400 - 200;
                 initialGuess.br.x = bestGuess.br.x + Math.random() * 400 - 200;
+                
+                // Reset fitness to force recomputation
+                initialGuess.fitness = 100000000;
 
                 // Reset the counters
                 stagnantCounter = 0;
