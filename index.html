@@ -974,6 +974,9 @@ async function findBestRectangularStart(measurements) {
         diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
         phase1TestCount++;
         
+        // Log each evaluation for debugging
+        console.log(`[Diagonal Test #${phase1TestCount}] Size: ${size}mm, Raw Fitness: ${result.fitness.toFixed(6)}, Display Fitness (1/raw): ${fitnessValue.toFixed(4)}`);
+        
         return { fitness: result.fitness, size: size };
     }
     
@@ -982,20 +985,35 @@ async function findBestRectangularStart(measurements) {
     let rightSize = 5000;
     const precision = 2; // Stop when range is less than 2mm
     
+    console.log(`\n=== PHASE 1: DIAGONAL TERNARY SEARCH ===`);
+    console.log(`Search range: ${leftSize}mm to ${rightSize}mm`);
+    console.log(`Precision target: ${precision}mm`);
+    console.log(`Note: Lower raw fitness is better\n`);
+    
+    let iteration = 0;
     while (rightSize - leftSize > precision) {
+        iteration++;
         const leftThird = leftSize + (rightSize - leftSize) / 3;
         const rightThird = rightSize - (rightSize - leftSize) / 3;
+        
+        console.log(`\n--- Iteration ${iteration} ---`);
+        console.log(`Current search range: [${leftSize.toFixed(2)}mm, ${rightSize.toFixed(2)}mm] (width: ${(rightSize - leftSize).toFixed(2)}mm)`);
+        console.log(`Testing left third: ${Math.round(leftThird)}mm and right third: ${Math.round(rightThird)}mm`);
         
         const leftResult = await evaluateDiagonalSize(Math.round(leftThird));
         const rightResult = await evaluateDiagonalSize(Math.round(rightThird));
         
+        console.log(`Comparison: Left fitness (${leftResult.fitness.toFixed(6)}) ${leftResult.fitness < rightResult.fitness ? '<' : '>='} Right fitness (${rightResult.fitness.toFixed(6)})`);
+        
         if (leftResult.fitness < diagonalBestFitness) {
             diagonalBestFitness = leftResult.fitness;
             diagonalBestSize = leftResult.size;
+            console.log(`  → New best found at LEFT: ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)}`);
         }
         if (rightResult.fitness < diagonalBestFitness) {
             diagonalBestFitness = rightResult.fitness;
             diagonalBestSize = rightResult.size;
+            console.log(`  → New best found at RIGHT: ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)}`);
         }
         
         // Update progress
@@ -1004,26 +1022,62 @@ async function findBestRectangularStart(measurements) {
         await new Promise(resolve => setTimeout(resolve, 10));
         
         if (leftResult.fitness < rightResult.fitness) {
+            console.log(`Decision: Narrowing to LEFT (discarding right portion [${rightThird.toFixed(2)}, ${rightSize.toFixed(2)}])`);
             rightSize = rightThird;
         } else {
+            console.log(`Decision: Narrowing to RIGHT (discarding left portion [${leftSize.toFixed(2)}, ${leftThird.toFixed(2)}])`);
             leftSize = leftThird;
         }
     }
     
+    console.log(`\n--- Final Evaluation ---`);
+    console.log(`Converged to range: [${leftSize.toFixed(2)}mm, ${rightSize.toFixed(2)}mm]`);
+    
     // Evaluate the final center point
     const finalDiagonalSize = Math.round((leftSize + rightSize) / 2);
+    console.log(`Testing final center point: ${finalDiagonalSize}mm`);
     const finalDiagonalResult = await evaluateDiagonalSize(finalDiagonalSize);
     if (finalDiagonalResult.fitness < diagonalBestFitness) {
         diagonalBestFitness = finalDiagonalResult.fitness;
         diagonalBestSize = finalDiagonalResult.size;
+        console.log(`  → Final point is the new best: ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)}`);
+    } else {
+        console.log(`  → Previous best remains: ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)}`);
     }
     
+    console.log(`\n=== PHASE 1 COMPLETE ===`);
+    console.log(`Best diagonal size: ${diagonalBestSize}mm`);
+    console.log(`Best fitness: ${diagonalBestFitness.toFixed(6)}`);
+    console.log(`Total evaluations: ${phase1TestCount}`);
+    
+    // Print summary table of all tested values
+    console.log(`\n=== ALL DIAGONAL VALUES TESTED (sorted by size) ===`);
+    const sortedResults = [...diagonalResults].sort((a, b) => a.size - b.size);
+    console.log(`${'Size (mm)'.padEnd(12)} | ${'Raw Fitness'.padEnd(15)} | ${'Display (1/raw)'.padEnd(15)} | Best?`);
+    console.log(`${''.padEnd(12, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(5, '-')}`);
+    sortedResults.forEach(result => {
+        const isBest = result.size === diagonalBestSize ? ' *** BEST ***' : '';
+        console.log(`${String(result.size).padEnd(12)} | ${result.rawFitness.toFixed(6).padEnd(15)} | ${result.fitness.toFixed(4).padEnd(15)}${isBest}`);
+    });
+    console.log(``);
+    
     messagesBox.value += `Phase 1 complete: Optimal radius found at ${diagonalBestSize}mm using ${phase1TestCount} evaluations (ternary search)\n`;
+    messagesBox.value += `  Best fitness: ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
+    
+    // Add summary table to messages box
+    messagesBox.value += `\nAll diagonal values tested (sorted by size):\n`;
+    messagesBox.value += `${'Size'.padEnd(8)} | ${'Raw Fitness'.padEnd(12)} | ${'Display'.padEnd(10)}\n`;
+    messagesBox.value += `${''.padEnd(8, '-')}-+-${''.padEnd(12, '-')}-+-${''.padEnd(10, '-')}\n`;
+    sortedResults.forEach(result => {
+        const marker = result.size === diagonalBestSize ? ' *BEST*' : '';
+        messagesBox.value += `${String(result.size).padEnd(8)} | ${result.rawFitness.toFixed(6).padEnd(12)} | ${result.fitness.toFixed(4).padEnd(10)}${marker}\n`;
+    });
+    messagesBox.value += `\n`;
     
     // Calculate optimal radius (distance from origin to diagonal point)
     const optimalRadius = Math.sqrt(diagonalBestSize * diagonalBestSize + diagonalBestSize * diagonalBestSize);
     
-    messagesBox.value += `\nPhase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${diagonalBestSize}x${diagonalBestSize}mm)\n`;
     messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
     searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
