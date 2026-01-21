@@ -1232,10 +1232,6 @@ async function findBestRectangularStart(measurements) {
     console.log(`Total refinement evaluations: ${refineTestCount}`);
     console.log(`Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction from exhaustive result`);
     
-    // Use refined result as final
-    const finalBestSize = refinedBestSize;
-    const finalBestFitness = refinedBestFitness;
-    
     messagesBox.value += `\nRefinement complete:\n`;
     messagesBox.value += `  Exhaustive coarse: ${exhaustiveBestSize}mm (fitness ${exhaustiveBestFitness.toFixed(6)})\n`;
     messagesBox.value += `  Refined precise:   ${refinedBestSize}mm (fitness ${refinedBestFitness.toFixed(6)}) ✓\n`;
@@ -1243,25 +1239,25 @@ async function findBestRectangularStart(measurements) {
     messagesBox.value += `  Total tests: ${exhaustiveTestCount} exhaustive + ${refineTestCount} refinement = ${exhaustiveTestCount + refineTestCount} evaluations\n`;
     messagesBox.value += `\n`;
     
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${finalBestSize}mm using exhaustive+refinement search\n`;
-    messagesBox.value += `  Best fitness: ${finalBestFitness.toFixed(6)} (display: ${(1/finalBestFitness).toFixed(4)})\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius found at ${refinedBestSize}mm using exhaustive+refinement search\n`;
+    messagesBox.value += `  Best fitness: ${refinedBestFitness.toFixed(6)} (display: ${(1/refinedBestFitness).toFixed(4)})\n`;
     messagesBox.value += `  Method: Exhaustive (50mm steps) → Ternary refinement (1mm precision)\n`;
     
-    // Add summary table to messages box
-    messagesBox.value += `\nAll diagonal values tested (sorted by size):\n`;
+    // Add summary table to messages box (from initial ternary search for comparison)
+    messagesBox.value += `\nInitial ternary diagonal values tested (sorted by size):\n`;
     messagesBox.value += `${'Size'.padEnd(8)} | ${'Raw Fitness'.padEnd(12)} | ${'Display'.padEnd(10)}\n`;
     messagesBox.value += `${''.padEnd(8, '-')}-+-${''.padEnd(12, '-')}-+-${''.padEnd(10, '-')}\n`;
     sortedResults.forEach(result => {
-        const marker = result.size === diagonalBestSize ? ' *BEST*' : '';
+        const marker = result.size === diagonalBestSize ? ' *TERNARY*' : '';
         messagesBox.value += `${String(result.size).padEnd(8)} | ${result.rawFitness.toFixed(6).padEnd(12)} | ${result.fitness.toFixed(4).padEnd(10)}${marker}\n`;
     });
     messagesBox.value += `\n`;
     
     // Calculate optimal radius (distance from origin to diagonal point)
     // For a square, the diagonal is sqrt(2) * side
-    const optimalRadius = Math.sqrt(2) * finalBestSize;
+    const optimalRadius = Math.sqrt(2) * refinedBestSize;
     
-    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${finalBestSize}x${finalBestSize}mm)\n`;
+    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${refinedBestSize}x${refinedBestSize}mm)\n`;
     messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
     searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
