@@ -1811,6 +1811,14 @@ function findMaxFitness(initialGuess, measurements) {
                 messagesBox.value += '\n Restarting...';
                 messagesBox.scrollTop = messagesBox.scrollHeight;
 
+                // Clear theta values from measurements to allow fresh optimization
+                measurements.forEach(measurement => {
+                    delete measurement.tlTheta;
+                    delete measurement.trTheta;
+                    delete measurement.blTheta;
+                    delete measurement.brTheta;
+                });
+
                 // Add ±50 to each of the corner anchor points and try again
                 initialGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
                 initialGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
