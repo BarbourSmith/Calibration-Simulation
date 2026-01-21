@@ -935,6 +935,64 @@ let surfaceMapState = {
     offsetY: 0
 };
 
+/**
+ * Computes the minimum and maximum diagonal search bounds based on measurement constraints.
+ * 
+ * Minimum: When a measurement point falls exactly on the diagonal from BL to TR corner,
+ * the sum bl + tr equals the diagonal length. We use the first measurement for this bound.
+ * For a square frame with side S, diagonal = S * sqrt(2), so: minSize = (bl + tr) / sqrt(2)
+ * 
+ * Maximum: When a measurement point lies on the bottom edge (horizontal from BL corner),
+ * we have bl + br = frame_width = S. We use the largest such sum across all measurements.
+ * Then: maxSize = max(bl + br) and maxDiagonal = maxSize * sqrt(2)
+ * 
+ * @param {Object[]} measurements - Array of measurement objects with bl, br, tr, tl properties
+ * @returns {Object} Object with minSize and maxSize bounds for the square frame side length
+ */
+function computeDiagonalBounds(measurements) {
+    if (!measurements || measurements.length === 0) {
+        // Fallback to original bounds if no measurements
+        return { minSize: 100, maxSize: 5000 };
+    }
+    
+    // Minimum: First measurement's BL + TR gives lower bound on diagonal
+    // For square frame: diagonal = size * sqrt(2), so if bl + tr is on diagonal:
+    // bl + tr = size * sqrt(2), therefore size = (bl + tr) / sqrt(2)
+    const firstMeasurement = measurements[0];
+    const minDiagonalLength = firstMeasurement.bl + firstMeasurement.tr;
+    const minSize = Math.floor(minDiagonalLength / Math.sqrt(2));
+    
+    // Maximum: For any measurement, if the point is horizontal (on bottom edge),
+    // then bl + br = frame_width. Take the maximum across all measurements.
+    let maxBottomWidth = 0;
+    for (const measurement of measurements) {
+        const bottomWidth = measurement.bl + measurement.br;
+        if (bottomWidth > maxBottomWidth) {
+            maxBottomWidth = bottomWidth;
+        }
+    }
+    const maxSize = Math.ceil(maxBottomWidth);
+    
+    // Add some padding for safety (5% margin) to account for measurement noise
+    const minSizeWithPadding = Math.max(100, Math.floor(minSize * 0.95));
+    const maxSizeWithPadding = Math.ceil(maxSize * 1.05);
+    
+    console.log(`\n=== DIAGONAL BOUNDS FROM MEASUREMENTS ===`);
+    console.log(`First measurement: bl=${firstMeasurement.bl.toFixed(2)}, tr=${firstMeasurement.tr.toFixed(2)}`);
+    console.log(`Minimum diagonal length: ${minDiagonalLength.toFixed(2)}mm`);
+    console.log(`Minimum frame size: ${minSize}mm (with 5% padding: ${minSizeWithPadding}mm)`);
+    console.log(`Maximum bottom width (bl+br): ${maxBottomWidth.toFixed(2)}mm`);
+    console.log(`Maximum frame size: ${maxSize}mm (with 5% padding: ${maxSizeWithPadding}mm)`);
+    console.log(`Search range: ${minSizeWithPadding}mm to ${maxSizeWithPadding}mm`);
+    console.log(`Original range was: 100mm to 5000mm`);
+    console.log(`Search space reduced by: ${((1 - (maxSizeWithPadding - minSizeWithPadding) / 4900) * 100).toFixed(1)}%`);
+    
+    return { 
+        minSize: minSizeWithPadding, 
+        maxSize: maxSizeWithPadding 
+    };
+}
+
 async function findBestRectangularStart(measurements) {
     const messagesBox = document.getElementById('output');
     const searchInfo = document.getElementById('search-info');
@@ -983,8 +1041,17 @@ async function findBestRectangularStart(measurements) {
         return { fitness: result.fitness, size: size };
     }
     
-    // Ternary search for optimal diagonal size (100 to 5000mm range)
-    let leftSize = 100;
+    // Compute diagonal bounds from measurements to constrain search space
+    const bounds = computeDiagonalBounds(measurementsCopy);
+    const minSearchSize = bounds.minSize;
+    const maxSearchSize = bounds.maxSize;
+    
+    messagesBox.value += `\nDiagonal bounds computed from measurements:\n`;
+    messagesBox.value += `  Search range: ${minSearchSize}mm to ${maxSearchSize}mm\n`;
+    messagesBox.value += `  (Original range: 100mm to 5000mm)\n`;
+    
+    // Ternary search for optimal diagonal size (using computed bounds)
+    let leftSize = minSearchSize;
     // PHASE 1: EXHAUSTIVE DIAGONAL SEARCH followed by TERNARY REFINEMENT
     // PHASE 1A: EXHAUSTIVE DIAGONAL SEARCH - finds global optimum region
     // Skip the initial ternary search - go directly to exhaustive for global optimum
@@ -997,8 +1064,8 @@ async function findBestRectangularStart(measurements) {
     let exhaustiveResults = [];
     let exhaustiveTestCount = 0;
     
-    // Test every 50mm from 100 to 5000
-    for (let size = 100; size <= 5000; size += 50) {
+    // Test every 50mm using computed bounds from measurements
+    for (let size = minSearchSize; size <= maxSearchSize; size += 50) {
         const guess = {
             tl: {x: 0, y: size},
             tr: {x: size, y: size},
@@ -1024,7 +1091,7 @@ async function findBestRectangularStart(measurements) {
     }
     
     console.log(`\n=== PHASE 1A EXHAUSTIVE SEARCH COMPLETE ===`);
-    console.log(`Tested ${exhaustiveTestCount} points (every 50mm from 100 to 5000mm)`);
+    console.log(`Tested ${exhaustiveTestCount} points (every 50mm from ${minSearchSize} to ${maxSearchSize}mm)`);
     console.log(`Best diagonal size: ${exhaustiveBestSize}mm`);
     console.log(`Best fitness: ${exhaustiveBestFitness.toFixed(6)}`);
     
@@ -1049,8 +1116,8 @@ async function findBestRectangularStart(measurements) {
     searchStatus.textContent = `Phase 1B: Refining exhaustive result with ternary search...`;
     
     // Set up refinement search range around exhaustive best (±50mm to cover the gap)
-    let refineLeftSize = Math.max(100, exhaustiveBestSize - 50);
-    let refineRightSize = Math.min(5000, exhaustiveBestSize + 50);
+    let refineLeftSize = Math.max(minSearchSize, exhaustiveBestSize - 50);
+    let refineRightSize = Math.min(maxSearchSize, exhaustiveBestSize + 50);
     const refinePrecision = 1; // Higher precision - stop when range is less than 1mm
     
     let refinedBestFitness = exhaustiveBestFitness;
