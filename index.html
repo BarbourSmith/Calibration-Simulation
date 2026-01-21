@@ -280,6 +280,9 @@ var blZ = 34
 var brZ = 78
 var acceptableCalibrationThreshold = 0.5
 
+// Maximum number of low-fitness retry attempts before giving up
+const MAX_LOW_FITNESS_RETRIES = 10;
+
 //This is the inital guess for how big the machine is. These numbers are wrong intensionally
 const initialWidth = 3048 + 12;
 const initialHeight = 2200 - 14;
@@ -1690,8 +1693,13 @@ function findMaxFitness(initialGuess, measurements) {
     let totalCounter = 0;
     var bestGuess = JSON.parse(JSON.stringify(initialGuess));
 
+    // Track retry attempts and best result across all retries
+    let lowFitnessRetryCount = 0;
+    let bestGuessAcrossAllRetries = JSON.parse(JSON.stringify(initialGuess));
+    let bestFitnessAcrossAllRetries = 1 / bestGuess.fitness;
+
     function iterate() {
-        if (stagnantCounter < 100 && totalCounter < 200000) {
+        if (stagnantCounter < 1000 && totalCounter < 200000) {
             //Clear the canvass
             clearCanvas();
 
@@ -1725,12 +1733,42 @@ function findMaxFitness(initialGuess, measurements) {
         else{
             messagesBox = document.getElementById('output');
 
-            if(1/bestGuess.fitness < acceptableCalibrationThreshold){
-                messagesBox.value += '\nWARNING FITNESS TOO LOW. DO NOT USE THESE CALIBRATION VALUES!';
+            // Track best guess across all retry attempts
+            const currentFitness = 1 / bestGuess.fitness;
+            if (currentFitness > bestFitnessAcrossAllRetries) {
+                bestFitnessAcrossAllRetries = currentFitness;
+                bestGuessAcrossAllRetries = JSON.parse(JSON.stringify(bestGuess));
+            }
+
+            if(currentFitness < acceptableCalibrationThreshold){
+                messagesBox.value += '\nCalculated Fitness Too Low (' + currentFitness.toFixed(7) + ' < ' + acceptableCalibrationThreshold + ').';
+
+                // Check if we've exceeded max retry attempts
+                if (lowFitnessRetryCount >= MAX_LOW_FITNESS_RETRIES) {
+                    messagesBox.value += '\n\n⚠️ Maximum retry attempts (' + MAX_LOW_FITNESS_RETRIES + ') reached.';
+                    messagesBox.value += '\nBest fitness achieved: ' + bestFitnessAcrossAllRetries.toFixed(7);
+                    messagesBox.value += '\n\n❌ Calibration stopped due to low fitness after maximum retries.';
+                    messagesBox.value += '\nWARNING: DO NOT USE THESE CALIBRATION VALUES!';
+                    messagesBox.scrollTop = messagesBox.scrollHeight;
+
+                    sendCalibrationEvent({
+                        good: false,
+                        final: true,
+                        maxRetriesReached: true,
+                        retryCount: lowFitnessRetryCount,
+                        bestGuess: bestGuessAcrossAllRetries,
+                        bestFitness: bestFitnessAcrossAllRetries
+                    }, true);
+
+                    return; // Exit the function without automatic retry
+                }
+
+                lowFitnessRetryCount++;
+                messagesBox.value += ' Retry ' + lowFitnessRetryCount + '/' + MAX_LOW_FITNESS_RETRIES + '...';
             }
 
             messagesBox.value += '\nCalibration complete \nCalibration values:';
-            messagesBox.value += '\nFitness: ' + (1/bestGuess.fitness).toFixed(7);
+            messagesBox.value += '\nFitness: ' + currentFitness.toFixed(7);
             messagesBox.value += '\nMaslow_tlX: ' + bestGuess.tl.x.toFixed(1);
             messagesBox.value += '\nMaslow_tlY: ' + bestGuess.tl.y.toFixed(1);
             messagesBox.value += '\nMaslow_trX: ' + bestGuess.tr.x.toFixed(1);
@@ -1742,7 +1780,7 @@ function findMaxFitness(initialGuess, measurements) {
             messagesBox.scrollTop
             messagesBox.scrollTop = messagesBox.scrollHeight;
 
-            if(1/bestGuess.fitness > acceptableCalibrationThreshold){
+            if(currentFitness > acceptableCalibrationThreshold){
                 // sendCommand('$/Maslow_tlX=' + bestGuess.tl.x.toFixed(1));
                 // sendCommand('$/Maslow_tlY=' + bestGuess.tl.y.toFixed(1));
                 // sendCommand('$/Maslow_trX=' + bestGuess.tr.x.toFixed(1));
@@ -1754,6 +1792,12 @@ function findMaxFitness(initialGuess, measurements) {
                 // refreshSettings(current_setting_filter);
                 // saveMaslowYaml();
 
+                sendCalibrationEvent({
+                    good: true,
+                    final: true,
+                    bestGuess: bestGuess
+                }, true);
+
                 messagesBox.value += '\nThese values have been automatically saved for you.';
                 messagesBox.value += "\nYou MUST restart your machine for them to take effect...I know that is annoying, it's getting fixed ASAP. ";
                 messagesBox.scrollTop
@@ -1763,6 +1807,33 @@ function findMaxFitness(initialGuess, measurements) {
                 // setTimeout(function() {
                 // sendCommand('$System/Control=RESTART');
                 // }, 2000);
+            } else {
+                // Fitness is too low, prepare for retry
+                sendCalibrationEvent({
+                    good: false,
+                    final: true,
+                    guess: bestGuess
+                }, true);
+
+                messagesBox.value += '\n Restarting with randomized anchor positions...';
+
+                //Add ±50 to each of the corner anchor points and try again
+                initialGuess.tl.x = bestGuess.tl.x + Math.random() * 100 - 50;
+                initialGuess.tl.y = bestGuess.tl.y + Math.random() * 100 - 50;
+                initialGuess.tr.x = bestGuess.tr.x + Math.random() * 100 - 50;
+                initialGuess.tr.y = bestGuess.tr.y + Math.random() * 100 - 50;
+                initialGuess.br.x = bestGuess.br.x + Math.random() * 100 - 50;
+
+                //Reset the counters
+                stagnantCounter = 0;
+                totalCounter = 0;
+
+                //Try again with different starting conditions
+                bestGuess = JSON.parse(JSON.stringify(initialGuess));
+                currentGuess = JSON.parse(JSON.stringify(initialGuess));
+
+                //Restart the iteration
+                setTimeout(iterate, 0);
             }
         }
     }
