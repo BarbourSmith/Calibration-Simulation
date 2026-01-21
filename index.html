@@ -1061,6 +1061,77 @@ async function findBestRectangularStart(measurements) {
     });
     console.log(); // Empty line for readability
     
+    // EXHAUSTIVE DIAGONAL SEARCH for comparison
+    console.log(`\n=== EXHAUSTIVE DIAGONAL SEARCH (every 50mm) ===`);
+    messagesBox.value += `\nRunning exhaustive diagonal search for comparison...\n`;
+    searchStatus.textContent = `Running exhaustive diagonal search (every 50mm)...`;
+    
+    let exhaustiveBestFitness = Infinity;
+    let exhaustiveBestSize = 0;
+    let exhaustiveResults = [];
+    let exhaustiveTestCount = 0;
+    
+    // Test every 50mm from 100 to 5000
+    for (let size = 100; size <= 5000; size += 50) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: size},
+            tr: {x: size, y: size},
+            bl: {x: 0, y: 0},
+            br: {x: size, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        exhaustiveResults.push({size, rawFitness: result.fitness, displayFitness: 1/result.fitness});
+        exhaustiveTestCount++;
+        
+        if (result.fitness < exhaustiveBestFitness) {
+            exhaustiveBestFitness = result.fitness;
+            exhaustiveBestSize = size;
+        }
+        
+        // Update progress every 10 tests
+        if (exhaustiveTestCount % 10 === 0) {
+            searchStatus.textContent = `Exhaustive search: ${exhaustiveTestCount} tested (${size}mm)`;
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    }
+    
+    console.log(`\n=== EXHAUSTIVE SEARCH COMPLETE ===`);
+    console.log(`Tested ${exhaustiveTestCount} points (every 50mm from 100 to 5000mm)`);
+    console.log(`Best diagonal size: ${exhaustiveBestSize}mm`);
+    console.log(`Best fitness: ${exhaustiveBestFitness.toFixed(6)}`);
+    
+    // Print exhaustive results table
+    console.log(`\n=== ALL EXHAUSTIVE DIAGONAL VALUES (every 50mm) ===`);
+    console.log(`${'Size (mm)'.padEnd(12)} | ${'Raw Fitness'.padEnd(15)} | ${'Display (1/raw)'.padEnd(15)} | Best?`);
+    console.log(`${''.padEnd(12, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(5, '-')}`);
+    exhaustiveResults.forEach(result => {
+        const isBest = result.size === exhaustiveBestSize ? ' *** BEST ***' : '';
+        console.log(`${String(result.size).padEnd(12)} | ${result.rawFitness.toFixed(6).padEnd(15)} | ${result.displayFitness.toFixed(4).padEnd(15)}${isBest}`);
+    });
+    console.log();
+    
+    // Add exhaustive search results to messages box
+    messagesBox.value += `\nExhaustive search complete: Tested ${exhaustiveTestCount} points (every 50mm)\n`;
+    messagesBox.value += `  Exhaustive best: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
+    messagesBox.value += `  Ternary best:    ${diagonalBestSize}mm with fitness ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
+    
+    if (exhaustiveBestSize === diagonalBestSize) {
+        messagesBox.value += `  ✓ Ternary search found the same optimum as exhaustive search!\n`;
+        console.log(`\n✓ VALIDATION: Ternary search found the same optimum as exhaustive search!`);
+    } else {
+        const fitnessDiff = Math.abs(exhaustiveBestFitness - diagonalBestFitness);
+        const sizeDiff = Math.abs(exhaustiveBestSize - diagonalBestSize);
+        messagesBox.value += `  ⚠ Different results: Size differs by ${sizeDiff}mm, fitness differs by ${fitnessDiff.toFixed(6)}\n`;
+        console.log(`\n⚠ VALIDATION: Different results found!`);
+        console.log(`  Exhaustive: ${exhaustiveBestSize}mm (fitness: ${exhaustiveBestFitness.toFixed(6)})`);
+        console.log(`  Ternary:    ${diagonalBestSize}mm (fitness: ${diagonalBestFitness.toFixed(6)})`);
+        console.log(`  Difference: ${sizeDiff}mm size, ${fitnessDiff.toFixed(6)} fitness`);
+    }
+    messagesBox.value += `\n`;
+    
     messagesBox.value += `Phase 1 complete: Optimal radius found at ${diagonalBestSize}mm using ${phase1TestCount} evaluations (ternary search)\n`;
     messagesBox.value += `  Best fitness: ${diagonalBestFitness.toFixed(6)} (display: ${(1/diagonalBestFitness).toFixed(4)})\n`;
     
