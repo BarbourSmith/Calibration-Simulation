@@ -935,363 +935,293 @@ let surfaceMapState = {
     offsetY: 0
 };
 
+/**
+ * Generates all valid (width, height) points along the mathematical constraint curve
+ * based on three distance measurements (to TL, TR, BR corners).
+ * Uses the geometry from Shape.html which derives the actual curve that valid rectangles must fall on.
+ * @param {number} dTL - Distance to top-left corner
+ * @param {number} dTR - Distance to top-right corner  
+ * @param {number} dBR - Distance to bottom-right corner
+ * @param {number} step - Step size for width iteration
+ * @returns {Array} - Array of {w, h, x, y} points on the constraint curve
+ */
+function generateConstraintCurve(dTL, dTR, dBR, step = 50) {
+    const curvePoints = [];
+    
+    // Constants derived from coordinate geometry
+    const TL2 = dTL * dTL;
+    const TR2 = dTR * dTR;
+    const BR2 = dBR * dBR;
+    
+    const Kx = TL2 - TR2; // Used for x term
+    const Ky = TR2 - BR2; // Used for y term (diff between TR and BR)
+    
+    // Bounds for w: The point (x,y) must be real
+    // Max dimension won't exceed sum of distances
+    const maxScan = dTL + dTR + dBR + 1000; 
+    
+    for (let w = step; w < maxScan; w += step) {
+        // Calculate X component: x = (w^2 + Kx) / (2w)
+        let valX = (w * w + Kx) / (2 * w);
+        let valX2 = valX * valX;
+        
+        // The constraint is: x^2 + (y-h)^2 = TL^2
+        // So (y-h)^2 = TL^2 - valX^2
+        let remainder = TL2 - valX2;
+        
+        if (remainder >= 0) {
+            // Let V = y-h. We know V^2 = remainder -> V = +/- sqrt(remainder)
+            // We also know y = (h^2 - Ky)/2h
+            // So (h^2 - Ky)/2h - h = V
+            // This leads to: h^2 + 2Vh + Ky = 0
+            
+            let V_mag = Math.sqrt(remainder);
+            let Vs = [V_mag, -V_mag];
+            
+            Vs.forEach(V => {
+                // Solve quadratic: h^2 + (2V)h + Ky = 0
+                let discrim = 4 * V * V - 4 * Ky;
+                
+                if (discrim >= 0) {
+                    let sqrtDisc = Math.sqrt(discrim);
+                    let h1 = (-2 * V + sqrtDisc) / 2;
+                    let h2 = (-2 * V - sqrtDisc) / 2;
+                    
+                    [h1, h2].forEach(h => {
+                        if (h > 0.01) {
+                            // Validate point geometry
+                            let x = (w * w + Kx) / (2 * w);
+                            let y = (h * h - Ky) / (2 * h);
+                            
+                            // Check if point is inside rectangle (0,0) to (w,h)
+                            let inside = (x >= -0.01 && x <= w + 0.01 && y >= -0.01 && y <= h + 0.01);
+                            if (inside) {
+                                curvePoints.push({ w: w, h: h, x: x, y: y });
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+    
+    return curvePoints;
+}
+
 async function findBestRectangularStart(measurements) {
     const messagesBox = document.getElementById('output');
     const searchInfo = document.getElementById('search-info');
     const canvas = document.getElementById('surface-map-canvas');
     const searchStatus = document.getElementById('search-status');
     
-    // Arc spacing is now fixed at 1mm for optimal precision
-    const arcSpacing = 1;
-    
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
     canvas.style.display = 'block';
     
     messagesBox.value = "Searching for best starting configuration...\n";
-    messagesBox.value += "Phase 1: Finding optimal radius along diagonal using ternary search...\n";
-    searchStatus.textContent = "Phase 1: Ternary search for optimal radius...";
+    messagesBox.value += "Using mathematically correct constraint curve based on measurement geometry...\n";
+    searchStatus.textContent = "Generating constraint curve from measurements...";
     
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // PHASE 1: Use ternary search to find optimal diagonal size efficiently
-    let diagonalBestFitness = Infinity;
-    let diagonalBestSize = 0;
-    let diagonalResults = [];
-    let phase1TestCount = 0;
+    // Use the first measurement to calculate the constraint curve
+    // Each measurement has distances {bl, br, tr, tl} from a measured point to the four corners
+    const firstMeasurement = measurementsCopy[0];
+    const dTL = firstMeasurement.tl;
+    const dTR = firstMeasurement.tr;
+    const dBR = firstMeasurement.br;
     
-    // Helper function to evaluate fitness at a given diagonal size
-    async function evaluateDiagonalSize(size) {
-        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(testMeasurements, guess, true);
-        const fitnessValue = 1 / result.fitness;
-        diagonalResults.push({size, fitness: fitnessValue, rawFitness: result.fitness});
-        phase1TestCount++;
-        
-        // Log each evaluation for debugging
-        console.log(`[Diagonal Test #${phase1TestCount}] Size: ${size}mm, Raw Fitness: ${result.fitness.toFixed(6)}, Display Fitness (1/raw): ${fitnessValue.toFixed(4)}`);
-        
-        return { fitness: result.fitness, size: size };
+    messagesBox.value += `\nUsing first measurement point:\n`;
+    messagesBox.value += `  Distance to TL: ${dTL.toFixed(2)}mm\n`;
+    messagesBox.value += `  Distance to TR: ${dTR.toFixed(2)}mm\n`;
+    messagesBox.value += `  Distance to BR: ${dBR.toFixed(2)}mm\n\n`;
+    
+    // PHASE 1: Generate constraint curve points (coarse search every 50mm)
+    messagesBox.value += "Phase 1: Generating constraint curve (coarse search, 50mm steps)...\n";
+    searchStatus.textContent = "Phase 1: Generating constraint curve...";
+    
+    const coarseCurvePoints = generateConstraintCurve(dTL, dTR, dBR, 50);
+    
+    messagesBox.value += `Generated ${coarseCurvePoints.length} valid points on constraint curve\n`;
+    console.log(`\n=== CONSTRAINT CURVE GENERATION ===`);
+    console.log(`Generated ${coarseCurvePoints.length} valid (w,h) points along constraint curve`);
+    
+    if (coarseCurvePoints.length === 0) {
+        messagesBox.value += "\n⚠️ ERROR: No valid curve points found. Cannot proceed with optimization.\n";
+        searchStatus.textContent = "ERROR: No valid curve points found";
+        return null;
     }
     
-    // Ternary search for optimal diagonal size (100 to 5000mm range)
-    let leftSize = 100;
-    // PHASE 1: EXHAUSTIVE DIAGONAL SEARCH followed by TERNARY REFINEMENT
-    // PHASE 1A: EXHAUSTIVE DIAGONAL SEARCH - finds global optimum region
-    // Skip the initial ternary search - go directly to exhaustive for global optimum
-    console.log(`\n=== PHASE 1A: EXHAUSTIVE DIAGONAL SEARCH (every 50mm) ===`);
-    messagesBox.value += `\nPhase 1A: Running exhaustive diagonal search (every 50mm)...\n`;
-    searchStatus.textContent = `Phase 1A: Exhaustive diagonal search (every 50mm)...`;
+    // PHASE 2: Evaluate fitness for each point on the coarse curve
+    messagesBox.value += "\nPhase 2: Evaluating fitness along constraint curve (coarse)...\n";
+    searchStatus.textContent = "Phase 2: Evaluating fitness along curve...";
     
-    let exhaustiveBestFitness = Infinity;
-    let exhaustiveBestSize = 0;
-    let exhaustiveResults = [];
-    let exhaustiveTestCount = 0;
-    
-    // Test every 50mm from 100 to 5000
-    for (let size = 100; size <= 5000; size += 50) {
-        const guess = {
-            tl: {x: 0, y: size},
-            tr: {x: size, y: size},
-            bl: {x: 0, y: 0},
-            br: {x: size, y: 0},
-            fitness: 0
-        };
-        
-        const result = computeLinesFitness(measurementsCopy, guess, true);
-        exhaustiveResults.push({size, rawFitness: result.fitness, displayFitness: 1/result.fitness});
-        exhaustiveTestCount++;
-        
-        if (result.fitness < exhaustiveBestFitness) {
-            exhaustiveBestFitness = result.fitness;
-            exhaustiveBestSize = size;
-        }
-        
-        // Update progress UI every 10 tests (minimal delay for responsiveness)
-        if (exhaustiveTestCount % 10 === 0) {
-            searchStatus.textContent = `Exhaustive search: ${exhaustiveTestCount} tested (${size}mm)`;
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
-    
-    console.log(`\n=== PHASE 1A EXHAUSTIVE SEARCH COMPLETE ===`);
-    console.log(`Tested ${exhaustiveTestCount} points (every 50mm from 100 to 5000mm)`);
-    console.log(`Best diagonal size: ${exhaustiveBestSize}mm`);
-    console.log(`Best fitness: ${exhaustiveBestFitness.toFixed(6)}`);
-    
-    // Print exhaustive results table
-    console.log(`\n=== ALL EXHAUSTIVE DIAGONAL VALUES (every 50mm) ===`);
-    console.log(`${'Size (mm)'.padEnd(12)} | ${'Raw Fitness'.padEnd(15)} | ${'Display (1/raw)'.padEnd(15)} | Best?`);
-    console.log(`${''.padEnd(12, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(15, '-')}-+-${''.padEnd(5, '-')}`);
-    exhaustiveResults.forEach(result => {
-        const isBest = result.size === exhaustiveBestSize ? ' *** BEST ***' : '';
-        console.log(`${String(result.size).padEnd(12)} | ${result.rawFitness.toFixed(6).padEnd(15)} | ${result.displayFitness.toFixed(4).padEnd(15)}${isBest}`);
-    });
-    console.log();
-    
-    // Add exhaustive search results to messages box
-    messagesBox.value += `\nPhase 1A complete: Exhaustive search tested ${exhaustiveTestCount} points (every 50mm)\n`;
-    messagesBox.value += `  Best coarse result: ${exhaustiveBestSize}mm with fitness ${exhaustiveBestFitness.toFixed(6)} (display: ${(1/exhaustiveBestFitness).toFixed(4)})\n`;
-    
-    // PHASE 1B: Refine exhaustive search result with ternary search
-    // Use exhaustive result as starting point for high-precision refinement
-    console.log(`\n=== PHASE 1B: TERNARY REFINEMENT FROM EXHAUSTIVE RESULT ===`);
-    messagesBox.value += `\nPhase 1B: Refining exhaustive result (${exhaustiveBestSize}mm) with ternary search...\n`;
-    searchStatus.textContent = `Phase 1B: Refining exhaustive result with ternary search...`;
-    
-    // Set up refinement search range around exhaustive best (±50mm to cover the gap)
-    let refineLeftSize = Math.max(100, exhaustiveBestSize - 50);
-    let refineRightSize = Math.min(5000, exhaustiveBestSize + 50);
-    const refinePrecision = 1; // Higher precision - stop when range is less than 1mm
-    
-    let refinedBestFitness = exhaustiveBestFitness;
-    let refinedBestSize = exhaustiveBestSize;
-    let refineTestCount = 0;
-    
-    console.log(`Starting refinement from exhaustive result: ${exhaustiveBestSize}mm`);
-    console.log(`Refinement search range: [${refineLeftSize}mm, ${refineRightSize}mm]`);
-    console.log(`Refinement precision target: ${refinePrecision}mm`);
-    console.log(`Note: Lower raw fitness is better\n`);
-    
-    let refineIteration = 0;
-    while (refineRightSize - refineLeftSize > refinePrecision) {
-        refineIteration++;
-        const leftThird = refineLeftSize + (refineRightSize - refineLeftSize) / 3;
-        const rightThird = refineRightSize - (refineRightSize - refineLeftSize) / 3;
-        
-        console.log(`\n--- Refinement Iteration ${refineIteration} ---`);
-        console.log(`Current range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm] (width: ${(refineRightSize - refineLeftSize).toFixed(2)}mm)`);
-        console.log(`Testing left third: ${Math.round(leftThird)}mm and right third: ${Math.round(rightThird)}mm`);
-        
-        // Evaluate left third
-        const leftSize = Math.round(leftThird);
-        const leftGuess = {
-            tl: {x: 0, y: leftSize},
-            tr: {x: leftSize, y: leftSize},
-            bl: {x: 0, y: 0},
-            br: {x: leftSize, y: 0},
-            fitness: 0
-        };
-        const leftResult = computeLinesFitness(measurementsCopy, leftGuess, true);
-        refineTestCount++;
-        console.log(`[Refinement Test #${refineTestCount}] Size: ${leftSize}mm, Raw Fitness: ${leftResult.fitness.toFixed(6)}`);
-        
-        // Evaluate right third
-        const rightSize = Math.round(rightThird);
-        const rightGuess = {
-            tl: {x: 0, y: rightSize},
-            tr: {x: rightSize, y: rightSize},
-            bl: {x: 0, y: 0},
-            br: {x: rightSize, y: 0},
-            fitness: 0
-        };
-        const rightResult = computeLinesFitness(measurementsCopy, rightGuess, true);
-        refineTestCount++;
-        console.log(`[Refinement Test #${refineTestCount}] Size: ${rightSize}mm, Raw Fitness: ${rightResult.fitness.toFixed(6)}`);
-        
-        console.log(`Comparison: Left (${leftResult.fitness.toFixed(6)}) ${leftResult.fitness < rightResult.fitness ? '<' : '>='} Right (${rightResult.fitness.toFixed(6)})`);
-        
-        // Track best
-        if (leftResult.fitness < refinedBestFitness) {
-            refinedBestFitness = leftResult.fitness;
-            refinedBestSize = leftSize;
-            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-        }
-        if (rightResult.fitness < refinedBestFitness) {
-            refinedBestFitness = rightResult.fitness;
-            refinedBestSize = rightSize;
-            console.log(`  → New refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-        }
-        
-        // Update progress
-        searchStatus.textContent = `Phase 1B: Ternary refinement (${refineTestCount} tested) - Best: ${refinedBestSize}mm`;
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Narrow search range
-        if (leftResult.fitness < rightResult.fitness) {
-            console.log(`Decision: Narrowing to LEFT (discarding [${rightThird.toFixed(2)}, ${refineRightSize.toFixed(2)}])`);
-            refineRightSize = rightThird;
-        } else {
-            console.log(`Decision: Narrowing to RIGHT (discarding [${refineLeftSize.toFixed(2)}, ${leftThird.toFixed(2)}])`);
-            refineLeftSize = leftThird;
-        }
-    }
-    
-    // Final evaluation at center
-    console.log(`\n--- Final Refinement Evaluation ---`);
-    console.log(`Converged to range: [${refineLeftSize.toFixed(2)}mm, ${refineRightSize.toFixed(2)}mm]`);
-    const finalRefineSize = Math.round((refineLeftSize + refineRightSize) / 2);
-    console.log(`Testing final center point: ${finalRefineSize}mm`);
-    
-    const finalRefineGuess = {
-        tl: {x: 0, y: finalRefineSize},
-        tr: {x: finalRefineSize, y: finalRefineSize},
-        bl: {x: 0, y: 0},
-        br: {x: finalRefineSize, y: 0},
-        fitness: 0
-    };
-    const finalRefineResult = computeLinesFitness(measurementsCopy, finalRefineGuess, true);
-    refineTestCount++;
-    console.log(`[Refinement Test #${refineTestCount}] Size: ${finalRefineSize}mm, Raw Fitness: ${finalRefineResult.fitness.toFixed(6)}`);
-    
-    if (finalRefineResult.fitness < refinedBestFitness) {
-        refinedBestFitness = finalRefineResult.fitness;
-        refinedBestSize = finalRefineSize;
-        console.log(`  → Final point is the new refined best: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-    } else {
-        console.log(`  → Previous refined best remains: ${refinedBestSize}mm with fitness ${refinedBestFitness.toFixed(6)}`);
-    }
-    
-    console.log(`\n=== PHASE 1B REFINEMENT COMPLETE ===`);
-    console.log(`Refined diagonal size: ${refinedBestSize}mm`);
-    console.log(`Refined fitness: ${refinedBestFitness.toFixed(6)}`);
-    console.log(`Total refinement evaluations: ${refineTestCount}`);
-    console.log(`Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction from exhaustive result`);
-    
-    messagesBox.value += `\nRefinement complete:\n`;
-    messagesBox.value += `  Exhaustive coarse: ${exhaustiveBestSize}mm (fitness ${exhaustiveBestFitness.toFixed(6)})\n`;
-    messagesBox.value += `  Refined precise:   ${refinedBestSize}mm (fitness ${refinedBestFitness.toFixed(6)}) ✓\n`;
-    messagesBox.value += `  Improvement: ${(exhaustiveBestFitness - refinedBestFitness).toFixed(6)} fitness reduction\n`;
-    messagesBox.value += `  Total tests: ${exhaustiveTestCount} exhaustive + ${refineTestCount} refinement = ${exhaustiveTestCount + refineTestCount} evaluations\n`;
-    messagesBox.value += `\n`;
-    
-    messagesBox.value += `Phase 1 complete: Optimal radius found at ${refinedBestSize}mm using two-stage search\n`;
-    messagesBox.value += `  Best fitness: ${refinedBestFitness.toFixed(6)} (display: ${(1/refinedBestFitness).toFixed(4)})\n`;
-    messagesBox.value += `  Method: Exhaustive coarse (50mm steps) → Ternary refinement (1mm precision)\n`;
-    messagesBox.value += `\n`;
-    
-    // Calculate optimal radius (distance from origin to diagonal point)
-    // For a square, the diagonal is sqrt(2) * side
-    const optimalRadius = Math.sqrt(2) * refinedBestSize;
-    
-    messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${refinedBestSize}x${refinedBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
-    searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
-    
-    // PHASE 2: Use ternary search to efficiently find the maximum on the arc
-    let bestGuess = null;
-    let bestFitness = Infinity;
+    let bestCoarseFitness = Infinity;
+    let bestCoarsePoint = null;
     let testedCount = 0;
-    
-    // Store tested points for visualization
     const testedPoints = [];
     
-    // Sample angles from 0° to 90° (first quadrant only, where width and height are both positive)
-    // We limit to angles where aspect ratio <= 3:1
-    const minAngle = Math.atan(1/3); // ~18.43° in radians (aspect ratio 3:1, wide)
-    const maxAngle = Math.PI / 2 - minAngle; // ~71.57° in radians (aspect ratio 1:3, tall)
-    
-    // Convert arc spacing (mm) to angle precision for ternary search termination
-    // We stop when the search range is smaller than 2 * arcSpacing
-    const anglePrecision = (2 * arcSpacing) / optimalRadius;
-    
-    // Helper function to evaluate fitness at a given angle
-    async function evaluateFitnessAtAngle(angleRad) {
-        const width = optimalRadius * Math.cos(angleRad);
-        const height = optimalRadius * Math.sin(angleRad);
-        
-        // Skip invalid dimensions
-        if (width <= 0 || height <= 0) return { fitness: Infinity, result: null };
-        
+    for (const point of coarseCurvePoints) {
         const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
         const guess = {
-            tl: {x: 0, y: height},
-            tr: {x: width, y: height},
+            tl: {x: 0, y: point.h},
+            tr: {x: point.w, y: point.h},
             bl: {x: 0, y: 0},
-            br: {x: width, y: 0},
+            br: {x: point.w, y: 0},
             fitness: 0
         };
         
         const result = computeLinesFitness(testMeasurements, guess, true);
         const fitnessValue = 1 / result.fitness;
         
-        // Store the tested point for visualization
         testedPoints.push({
-            width: width,
-            height: height,
+            width: point.w,
+            height: point.h,
             fitness: fitnessValue,
             rawFitness: result.fitness
         });
         
+        if (result.fitness < bestCoarseFitness) {
+            bestCoarseFitness = result.fitness;
+            bestCoarsePoint = { point: point, result: result };
+        }
+        
         testedCount++;
         
-        return { fitness: result.fitness, result: result, angle: angleRad };
-    }
-    
-    // Ternary search to find the angle with maximum fitness (minimum rawFitness)
-    let left = minAngle;
-    let right = maxAngle;
-    
-    while (right - left > anglePrecision) {
-        // Divide the range into three parts
-        const leftThird = left + (right - left) / 3;
-        const rightThird = right - (right - left) / 3;
-        
-        // Evaluate fitness at the two interior points
-        const leftResult = await evaluateFitnessAtAngle(leftThird);
-        const rightResult = await evaluateFitnessAtAngle(rightThird);
-        
-        // Update best guess if we found a better fitness
-        if (leftResult.fitness < bestFitness) {
-            bestFitness = leftResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(leftResult.result));
-        }
-        if (rightResult.fitness < bestFitness) {
-            bestFitness = rightResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(rightResult.result));
-        }
-        
-        // Update progress
-        const searchRange = ((right - left) / (maxAngle - minAngle) * 100).toFixed(1);
-        if (bestGuess) {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-        } else {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining)...`;
-        }
-        
-        // Render current data
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Narrow the search range based on which point has better fitness
-        // We want to minimize fitness (lower is better), so we eliminate the part with worse fitness
-        if (leftResult.fitness < rightResult.fitness) {
-            // Maximum is in the left 2/3, eliminate the right 1/3
-            right = rightThird;
-        } else {
-            // Maximum is in the right 2/3, eliminate the left 1/3
-            left = leftThird;
+        // Update progress every 10 tests
+        if (testedCount % 10 === 0) {
+            searchStatus.textContent = `Phase 2: Tested ${testedCount}/${coarseCurvePoints.length} points - Best: ${bestCoarsePoint ? bestCoarsePoint.point.w.toFixed(0) + 'x' + bestCoarsePoint.point.h.toFixed(0) + 'mm' : 'searching...'}`;
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
     }
     
-    // Evaluate the final center point for completeness
-    const finalAngle = (left + right) / 2;
-    const finalResult = await evaluateFitnessAtAngle(finalAngle);
-    if (finalResult.fitness < bestFitness) {
-        bestFitness = finalResult.fitness;
-        bestGuess = JSON.parse(JSON.stringify(finalResult.result));
+    console.log(`\n=== COARSE SEARCH COMPLETE ===`);
+    console.log(`Tested ${testedCount} points along constraint curve`);
+    console.log(`Best coarse result: ${bestCoarsePoint.point.w.toFixed(0)}x${bestCoarsePoint.point.h.toFixed(0)}mm`);
+    console.log(`Best fitness: ${bestCoarseFitness.toFixed(6)} (display: ${(1/bestCoarseFitness).toFixed(4)})`);
+    
+    messagesBox.value += `\nPhase 2 complete: Tested ${testedCount} points\n`;
+    messagesBox.value += `  Best coarse result: ${bestCoarsePoint.point.w.toFixed(0)}x${bestCoarsePoint.point.h.toFixed(0)}mm\n`;
+    messagesBox.value += `  Fitness: ${bestCoarseFitness.toFixed(6)} (display: ${(1/bestCoarseFitness).toFixed(4)})\n\n`;
+    
+    // PHASE 3: Refine around best coarse point with finer curve sampling
+    messagesBox.value += "Phase 3: Refining best result with fine constraint curve (1mm steps)...\n";
+    searchStatus.textContent = "Phase 3: Refining with fine curve sampling...";
+    
+    // Generate a finer curve in the region around the best coarse point
+    const searchRadius = 200; // Search ±200mm around best point
+    const minW = Math.max(1, bestCoarsePoint.point.w - searchRadius);
+    const maxW = bestCoarsePoint.point.w + searchRadius;
+    
+    // Generate fine curve points in the refined region
+    const fineCurvePoints = [];
+    const fineStep = 1; // 1mm precision
+    
+    for (let w = minW; w <= maxW; w += fineStep) {
+        // Calculate for this specific width using same curve math
+        let valX = (w * w + (dTL*dTL - dTR*dTR)) / (2 * w);
+        let valX2 = valX * valX;
+        let remainder = dTL*dTL - valX2;
+        
+        if (remainder >= 0) {
+            let V_mag = Math.sqrt(remainder);
+            let Vs = [V_mag, -V_mag];
+            
+            Vs.forEach(V => {
+                let discrim = 4 * V * V - 4 * (dTR*dTR - dBR*dBR);
+                
+                if (discrim >= 0) {
+                    let sqrtDisc = Math.sqrt(discrim);
+                    let h1 = (-2 * V + sqrtDisc) / 2;
+                    let h2 = (-2 * V - sqrtDisc) / 2;
+                    
+                    [h1, h2].forEach(h => {
+                        if (h > 0.01) {
+                            let x = valX;
+                            let y = (h * h - (dTR*dTR - dBR*dBR)) / (2 * h);
+                            let inside = (x >= -0.01 && x <= w + 0.01 && y >= -0.01 && y <= h + 0.01);
+                            
+                            // Only include points near the best coarse height
+                            if (inside && Math.abs(h - bestCoarsePoint.point.h) < searchRadius) {
+                                fineCurvePoints.push({ w: w, h: h, x: x, y: y });
+                            }
+                        }
+                    });
+                }
+            });
+        }
     }
     
-    // Final render
-    searchStatus.textContent = "Rendering final 3D surface map...";
+    console.log(`\n=== FINE REFINEMENT ===`);
+    console.log(`Generated ${fineCurvePoints.length} fine curve points around best coarse result`);
+    console.log(`Search region: w=[${minW.toFixed(0)}, ${maxW.toFixed(0)}]mm, h≈${bestCoarsePoint.point.h.toFixed(0)}±${searchRadius}mm`);
+    
+    let bestFineFitness = bestCoarseFitness;
+    let bestFinePoint = bestCoarsePoint;
+    let fineTestedCount = 0;
+    
+    for (const point of fineCurvePoints) {
+        const testMeasurements = JSON.parse(JSON.stringify(measurementsCopy));
+        const guess = {
+            tl: {x: 0, y: point.h},
+            tr: {x: point.w, y: point.h},
+            bl: {x: 0, y: 0},
+            br: {x: point.w, y: 0},
+            fitness: 0
+        };
+        
+        const result = computeLinesFitness(testMeasurements, guess, true);
+        const fitnessValue = 1 / result.fitness;
+        
+        testedPoints.push({
+            width: point.w,
+            height: point.h,
+            fitness: fitnessValue,
+            rawFitness: result.fitness
+        });
+        
+        if (result.fitness < bestFineFitness) {
+            bestFineFitness = result.fitness;
+            bestFinePoint = { point: point, result: result };
+        }
+        
+        fineTestedCount++;
+        
+        // Update progress every 50 tests
+        if (fineTestedCount % 50 === 0) {
+            searchStatus.textContent = `Phase 3: Tested ${fineTestedCount}/${fineCurvePoints.length} fine points - Best: ${bestFinePoint.point.w.toFixed(1)}x${bestFinePoint.point.h.toFixed(1)}mm`;
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+    }
+    
+    console.log(`\n=== FINE SEARCH COMPLETE ===`);
+    console.log(`Tested ${fineTestedCount} fine points`);
+    console.log(`Best refined result: ${bestFinePoint.point.w.toFixed(1)}x${bestFinePoint.point.h.toFixed(1)}mm`);
+    console.log(`Best fitness: ${bestFineFitness.toFixed(6)} (display: ${(1/bestFineFitness).toFixed(4)})`);
+    console.log(`Improvement: ${(bestCoarseFitness - bestFineFitness).toFixed(6)} fitness reduction`);
+    
+    messagesBox.value += `\nPhase 3 complete: Tested ${fineTestedCount} fine points\n`;
+    messagesBox.value += `  Best refined result: ${bestFinePoint.point.w.toFixed(1)}x${bestFinePoint.point.h.toFixed(1)}mm\n`;
+    messagesBox.value += `  Fitness: ${bestFineFitness.toFixed(6)} (display: ${(1/bestFineFitness).toFixed(4)})\n`;
+    messagesBox.value += `  Improvement: ${(bestCoarseFitness - bestFineFitness).toFixed(6)} fitness reduction\n\n`;
+    
+    // Final render with all tested points
+    searchStatus.textContent = "Rendering final surface map...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
+    const bestGuess = bestFinePoint.result;
     render3DSurfaceArc(canvas, testedPoints, bestGuess);
-    
-    // Setup controls
     setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using ternary search (1mm precision). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using efficient ternary search (1mm precision).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount + fineTestedCount} points along constraint curve. Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestGuess.fitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Total points tested: ${testedCount + fineTestedCount}\n`;
+    messagesBox.value += `  Method: Mathematical constraint curve (not circular arc)\n`;
+    messagesBox.value += `  Best rectangular start:\n`;
+    messagesBox.value += `    Width: ${bestGuess.tr.x.toFixed(1)}mm\n`;
+    messagesBox.value += `    Height: ${bestGuess.tr.y.toFixed(1)}mm\n`;
+    messagesBox.value += `    Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\n`;
+    messagesBox.value += `Starting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
