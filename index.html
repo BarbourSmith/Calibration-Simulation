@@ -947,9 +947,16 @@ async function findBestRectangularStart(measurements) {
     const canvas = document.getElementById('surface-map-canvas');
     const searchStatus = document.getElementById('search-status');
     
-    // Get arc spacing from user input
+    // Get arc spacing from user input with validation
     const arcStepSizeInput = document.getElementById('arc-step-size-input');
-    const arcSpacing = parseFloat(arcStepSizeInput.value) || 1;
+    let arcSpacing = parseFloat(arcStepSizeInput.value);
+    
+    // Validate and clamp arc spacing to acceptable range
+    if (isNaN(arcSpacing) || arcSpacing < 0.1 || arcSpacing > 100) {
+        console.warn(`Invalid arc step size: ${arcStepSizeInput.value}. Using default value of 1mm.`);
+        arcSpacing = 1;
+        arcStepSizeInput.value = 1; // Reset input to valid value
+    }
     
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
