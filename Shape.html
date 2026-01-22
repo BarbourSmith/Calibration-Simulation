@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rectangle Dimension Solver</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 { margin-top: 0; font-size: 1.5rem; color: #2c3e50; }
+        p { color: #666; line-height: 1.5; }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        button {
+            grid-column: span 3;
+            padding: 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #2980b9; }
+
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fff;
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        .stats {
+            margin-top: 10px;
+            font-family: monospace;
+            color: #555;
+            text-align: center;
+            height: 20px;
+        }
+
+        .legend {
+            font-size: 0.9rem;
+            margin-top: 5px;
+            text-align: center;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Rectangle Solution Explorer</h1>
+    <p>Enter the distances from the random point to the three specified corners. The graph below plots every possible width ($w$) and height ($h$) the rectangle could have.</p>
+
+    <div class="controls">
+        <div class="input-group">
+            <label for="tl">Top-Left (TL)</label>
+            <input type="number" id="tl" value="3" step="0.1" min="0.1">
+        </div>
+        <div class="input-group">
+            <label for="tr">Top-Right (TR)</label>
+            <input type="number" id="tr" value="4" step="0.1" min="0.1">
+        </div>
+        <div class="input-group">
+            <label for="br">Bottom-Right (BR)</label>
+            <input type="number" id="br" value="5" step="0.1" min="0.1">
+        </div>
+        <button onclick="calculateAndDraw()">Generate Curve</button>
+    </div>
+
+    <canvas id="plotCanvas" width="600" height="500"></canvas>
+    <div class="legend">Blue Line: Possible (w, h) values &nbsp;|&nbsp; Red Shape: Actual Rectangle Geometry</div>
+    <div class="stats" id="statusText">Hover over the curve to see the rectangle</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('plotCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('statusText');
+    
+    // State to store the valid curve points
+    let curvePoints = []; 
+    // State for inputs
+    let dTL, dTR, dBR;
+    
+    // Canvas coordinate transforms
+    let scaleX, scaleY, offsetX, offsetY;
+    const padding = 60;
+
+    function calculateAndDraw() {
+        // 1. Get Inputs
+        dTL = parseFloat(document.getElementById('tl').value);
+        dTR = parseFloat(document.getElementById('tr').value);
+        dBR = parseFloat(document.getElementById('br').value);
+
+        if (isNaN(dTL) || isNaN(dTR) || isNaN(dBR) || dTL <= 0 || dTR <= 0 || dBR <= 0) {
+            alert("Please enter valid positive numbers for all distances.");
+            return;
+        }
+
+        // 2. Constants for the equation
+        // Derived from coordinate geometry:
+        // x = (w^2 + dTL^2 - dTR^2) / 2w
+        // y = (h^2 - (dTR^2 - dBR^2)) / 2h   <-- derived from TR and BR diff
+        // Constraint: x^2 + (y-h)^2 = dTL^2
+        
+        const TL2 = dTL * dTL;
+        const TR2 = dTR * dTR;
+        const BR2 = dBR * dBR;
+        
+        const Kx = TL2 - TR2; // Used for x term
+        const Ky = TR2 - BR2; // Used for y term (diff between TR and BR)
+
+        // 3. Generate Curve Points
+        // We iterate w and solve for h.
+        curvePoints = [];
+        
+        // Bounds for w: The point (x,y) must be real.
+        // Approximately, max dimension won't exceed sum of distances.
+        const maxScan = dTL + dTR + dBR + 20; 
+        const step = maxScan / 2000;
+
+        for (let w = 0.01; w < maxScan; w += step) {
+            // Calculate X component term: ((w^2 + Kx)/2w)^2
+            let valX = (w * w + Kx) / (2 * w);
+            let valX2 = valX * valX;
+
+            // The constraint is: x^2 + (y-h)^2 = TL^2
+            // We know x = valX.
+            // So (y-h)^2 = TL^2 - valX^2
+            let remainder = TL2 - valX2;
+
+            if (remainder >= 0) {
+                // Let V = y-h. We know V^2 = remainder -> V = +/- sqrt(remainder)
+                // We also know y = (h^2 - Ky)/2h
+                // So (h^2 - Ky)/2h - h = V
+                // (h^2 - Ky - 2h^2) / 2h = V
+                // (-h^2 - Ky) = 2hV
+                // h^2 + 2Vh + Ky = 0
+                
+                let V_mag = Math.sqrt(remainder);
+                let Vs = [V_mag, -V_mag];
+
+                Vs.forEach(V => {
+                    // Solve quadratic: h^2 + (2V)h + Ky = 0
+                    // Discrim: (2V)^2 - 4(1)(Ky) = 4V^2 - 4Ky
+                    let discrim = 4 * V * V - 4 * Ky;
+                    
+                    if (discrim >= 0) {
+                        let sqrtDisc = Math.sqrt(discrim);
+                        let h1 = (-2 * V + sqrtDisc) / 2;
+                        let h2 = (-2 * V - sqrtDisc) / 2;
+
+                        [h1, h2].forEach(h => {
+                            if (h > 0.01) {
+                                // Validate point geometry to be sure
+                                // Recalculate x, y
+                                let x = (w * w + Kx) / (2 * w);
+                                // y derived earlier: y = (h^2 - Ky)/2h
+                                let y = (h * h - Ky) / (2 * h);
+                                
+                                // Check if point is inside rectangle (0,0) to (w,h)
+                                // Actually, problem doesn't strictly say point MUST be inside, 
+                                // but "within" usually implies it.
+                                // Let's store it regardless, but mark if internal.
+                                let inside = (x >= -0.01 && x <= w+0.01 && y >= -0.01 && y <= h+0.01);
+                                if(inside) {
+                                    curvePoints.push({ w: w, h: h, x: x, y: y });
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        }
+
+        drawScene();
+    }
+
+    function drawScene(highlightPoint = null) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if (curvePoints.length === 0) {
+            ctx.fillStyle = "#666";
+            ctx.font = "16px sans-serif";
+            ctx.fillText("No valid rectangle found for these dimensions.", 50, 50);
+            return;
+        }
+
+        // 1. Determine Scale
+        let maxW = 0, maxH = 0;
+        curvePoints.forEach(p => {
+            if (p.w > maxW) maxW = p.w;
+            if (p.h > maxH) maxH = p.h;
+        });
+        
+        // Add some margin
+        maxW *= 1.2;
+        maxH *= 1.2;
+
+        const availW = canvas.width - 2 * padding;
+        const availH = canvas.height - 2 * padding;
+
+        scaleX = availW / maxW;
+        scaleY = availH / maxH;
+        // Keep aspect ratio 1:1 for the graph to prevent distortion? 
+        // No, standard graph behavior is better here, but let's try to keep 1:1 if possible
+        // so w and h look comparable.
+        let scale = Math.min(scaleX, scaleY);
+        scaleX = scale;
+        scaleY = scale;
+
+        offsetX = padding;
+        offsetY = canvas.height - padding; // Y axis goes up
+
+        // 2. Draw Axes
+        ctx.beginPath();
+        ctx.strokeStyle = "#ccc";
+        ctx.lineWidth = 1;
+        // X axis
+        ctx.moveTo(offsetX, offsetY);
+        ctx.lineTo(offsetX + maxW * scaleX, offsetY);
+        // Y axis
+        ctx.moveTo(offsetX, offsetY);
+        ctx.lineTo(offsetX, offsetY - maxH * scaleY);
+        ctx.stroke();
+
+        // Labels
+        ctx.fillStyle = "#555";
+        ctx.font = "14px Arial";
+        ctx.fillText("Width (w)", offsetX + maxW * scaleX - 40, offsetY + 30);
+        ctx.save();
+        ctx.translate(offsetX - 30, offsetY - maxH * scaleY + 40);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText("Height (h)", 0, 0);
+        ctx.restore();
+
+        // 3. Draw Curve
+        ctx.fillStyle = "#3498db";
+        
+        // Since points are not ordered, drawing a line is messy. 
+        // Drawing small circles is easier and looks like a curve with high density.
+        curvePoints.forEach(p => {
+            const px = offsetX + p.w * scaleX;
+            const py = offsetY - p.h * scaleY;
+            ctx.fillRect(px, py, 2, 2);
+        });
+
+        // 4. Draw Interactive Elements (Ghost Rectangle)
+        if (highlightPoint) {
+            drawGhostRect(highlightPoint);
+        }
+    }
+
+    function drawGhostRect(pt) {
+        // Draw the point on the curve
+        const curvePx = offsetX + pt.w * scaleX;
+        const curvePy = offsetY - pt.h * scaleY;
+
+        ctx.beginPath();
+        ctx.arc(curvePx, curvePy, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "red";
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.stroke();
+
+        // Draw the actual rectangle geometry
+        // We will center this ghost rectangle in the remaining white space or overlay it
+        // Let's overlay it anchored at (0,0) of the graph for clarity, 
+        // showing it relative to the axes.
+        
+        const rW = pt.w * scaleX;
+        const rH = pt.h * scaleY;
+        const rX = pt.x * scaleX;
+        const rY = pt.y * scaleY;
+
+        // Draw Rectangle
+        ctx.beginPath();
+        ctx.rect(offsetX, offsetY - rH, rW, rH);
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255, 0, 0, 0.05)";
+        ctx.fill();
+
+        // Draw Point inside
+        const pPx = offsetX + rX;
+        const pPy = offsetY - (pt.h - pt.y) * scaleY; 
+        // Wait, coordinate system:
+        // In derivation: BL is (0,0). P is (x,y).
+        // Canvas: offsetY is 0. Y goes up.
+        // So Point Y is offsetY - rY.
+        
+        ctx.beginPath();
+        ctx.arc(offsetX + rX, offsetY - rY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "black";
+        ctx.fill();
+
+        // Draw Lines to corners
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        ctx.setLineDash([5, 5]);
+        
+        // To TL (0, h)
+        ctx.moveTo(offsetX + rX, offsetY - rY);
+        ctx.lineTo(offsetX, offsetY - rH);
+        
+        // To TR (w, h)
+        ctx.moveTo(offsetX + rX, offsetY - rY);
+        ctx.lineTo(offsetX + rW, offsetY - rH);
+        
+        // To BR (w, 0)
+        ctx.moveTo(offsetX + rX, offsetY - rY);
+        ctx.lineTo(offsetX + rW, offsetY);
+
+        // To BL (0, 0) - implicit 4th line
+        // ctx.moveTo(offsetX + rX, offsetY - rY);
+        // ctx.lineTo(offsetX, offsetY);
+        
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Text Info
+        statusText.textContent = `w: ${pt.w.toFixed(2)}, h: ${pt.h.toFixed(2)} | Point: (${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`;
+    }
+
+    // Interaction
+    canvas.addEventListener('mousemove', (e) => {
+        if (!curvePoints.length) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        // Find nearest point on curve to mouse
+        let closest = null;
+        let minDist = Infinity;
+
+        // Optimization: Checking all points is fine for ~2-4k points
+        for (let p of curvePoints) {
+            const px = offsetX + p.w * scaleX;
+            const py = offsetY - p.h * scaleY;
+            const dist = Math.hypot(px - mx, py - my);
+            if (dist < minDist) {
+                minDist = dist;
+                closest = p;
+            }
+        }
+
+        if (minDist < 50) { // Only snap if within 50px
+            drawScene(closest);
+        } else {
+            drawScene(null);
+            statusText.textContent = "Hover over the curve to see the rectangle";
+        }
+    });
+
+    // Initial Draw
+    calculateAndDraw();
+
+</script>
+
+</body>
+</html>
