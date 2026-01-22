@@ -1243,7 +1243,7 @@ async function findBestRectangularStart(measurements) {
     }
     
     // Exhaustive search: compute every point along the arc
-    for (let i = 0; i <= numPoints; i++) {
+    for (let i = 0; i < numPoints; i++) {
         const angle = minAngle + (i * angleStep);
         const angleResult = await evaluateFitnessAtAngle(angle);
         
@@ -1254,15 +1254,15 @@ async function findBestRectangularStart(measurements) {
         }
         
         // Update progress every 10 points or on final point
-        if (i % 10 === 0 || i === numPoints) {
-            const progress = ((i / numPoints) * 100).toFixed(1);
+        if (i % 10 === 0 || i === numPoints - 1) {
+            const progress = ((i / (numPoints - 1)) * 100).toFixed(1);
             if (bestGuess) {
-                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints+1} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
             } else {
-                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints+1} points, ${progress}% complete)...`;
+                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints} points, ${progress}% complete)...`;
             }
             
-            // Render current data
+            // Render current data (only every 10 points for performance)
             render3DSurfaceArc(canvas, testedPoints, bestGuess);
             await new Promise(resolve => setTimeout(resolve, 1));
         }
