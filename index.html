@@ -249,6 +249,36 @@
                     Use rectangular approximation for poor initial guesses (fitness < 0.1)
                 </label>
             </div>
+            <div class="input-grid" style="margin-bottom: 15px;">
+                <div class="input-field">
+                    <label for="arc-step-size-input">Arc Step Size (mm)</label>
+                    <input type="number" id="arc-step-size-input" value="1" step="0.1" min="0.1" max="100">
+                </div>
+                <div class="input-field">
+                    <label for="num-arcs-input">Number of Arcs</label>
+                    <input type="number" id="num-arcs-input" value="1" step="1" min="1" max="10" title="Number of arcs to test around optimal radius. 1 = single arc, 2 = 3 arcs (±1 step), 3 = 5 arcs (±2 steps)">
+                </div>
+            </div>
+            <div style="margin-bottom: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0; font-size: 14px;">Manual Point Computation</h4>
+                <div class="input-grid" style="margin-bottom: 10px;">
+                    <div class="input-field">
+                        <label for="manual-width-input">Width (mm)</label>
+                        <input type="number" id="manual-width-input" value="3000" step="10" min="0" max="10000">
+                    </div>
+                    <div class="input-field">
+                        <label for="manual-height-input">Height (mm)</label>
+                        <input type="number" id="manual-height-input" value="2500" step="10" min="0" max="10000">
+                    </div>
+                </div>
+                <button id="compute-manual-point-button" style="width: 100%;">Compute & Display Point</button>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; font-weight: 500;">
+                    <input type="checkbox" id="skip-optimization" style="margin-right: 8px; cursor: pointer; width: auto;">
+                    Skip further optimization after arc computation
+                </label>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -941,8 +971,27 @@ async function findBestRectangularStart(measurements) {
     const canvas = document.getElementById('surface-map-canvas');
     const searchStatus = document.getElementById('search-status');
     
-    // Arc spacing is now fixed at 1mm for optimal precision
-    const arcSpacing = 1;
+    // Get arc spacing from user input with validation
+    const arcStepSizeInput = document.getElementById('arc-step-size-input');
+    let arcSpacing = parseFloat(arcStepSizeInput.value);
+    
+    // Validate and clamp arc spacing to acceptable range
+    if (isNaN(arcSpacing) || arcSpacing < 0.1 || arcSpacing > 100) {
+        console.warn(`Invalid arc step size: ${arcStepSizeInput.value}. Using default value of 1mm.`);
+        arcSpacing = 1;
+        arcStepSizeInput.value = 1; // Reset input to valid value
+    }
+    
+    // Get number of arcs from user input with validation
+    const numArcsInput = document.getElementById('num-arcs-input');
+    let numArcs = parseInt(numArcsInput.value);
+    
+    // Validate and clamp number of arcs to acceptable range
+    if (isNaN(numArcs) || numArcs < 1 || numArcs > 10) {
+        console.warn(`Invalid number of arcs: ${numArcsInput.value}. Using default value of 1.`);
+        numArcs = 1;
+        numArcsInput.value = 1; // Reset input to valid value
+    }
     
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
@@ -1174,10 +1223,30 @@ async function findBestRectangularStart(measurements) {
     const optimalRadius = Math.sqrt(2) * refinedBestSize;
     
     messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${refinedBestSize}x${refinedBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Using ternary search to efficiently find maximum on arc at ${optimalRadius.toFixed(0)}mm radius...\n`;
-    searchStatus.textContent = `Phase 2: Ternary search on arc (radius ${optimalRadius.toFixed(0)}mm)...`;
     
-    // PHASE 2: Use ternary search to efficiently find the maximum on the arc
+    // Calculate which radii to test based on number of arcs
+    const radiiToTest = [];
+    if (numArcs === 1) {
+        radiiToTest.push(optimalRadius);
+    } else {
+        // Calculate offset for additional arcs
+        // numArcs specifies how many arcs to add on EACH side of the optimal radius
+        // numArcs = 2: adds 1 arc per side → 3 total arcs (optimal - stepSize, optimal, optimal + stepSize)
+        // numArcs = 3: adds 2 arcs per side → 5 total arcs (optimal - 2*stepSize, ..., optimal + 2*stepSize)
+        const arcsOnEachSide = numArcs - 1;
+        for (let i = -arcsOnEachSide; i <= arcsOnEachSide; i++) {
+            radiiToTest.push(optimalRadius + (i * arcSpacing));
+        }
+    }
+    
+    const totalArcs = radiiToTest.length;
+    messagesBox.value += `Phase 2: Computing all points on ${totalArcs} arc${totalArcs > 1 ? 's' : ''} with ${arcSpacing}mm step size...\n`;
+    if (totalArcs > 1) {
+        messagesBox.value += `  Radii: ${radiiToTest.map(r => r.toFixed(0) + 'mm').join(', ')}\n`;
+    }
+    searchStatus.textContent = `Phase 2: Exhaustive arc computation (${totalArcs} arc${totalArcs > 1 ? 's' : ''}, ${arcSpacing}mm steps)...`;
+    
+    // PHASE 2: Compute every point along the arc(s) with configurable step size
     let bestGuess = null;
     let bestFitness = Infinity;
     let testedCount = 0;
@@ -1190,14 +1259,25 @@ async function findBestRectangularStart(measurements) {
     const minAngle = Math.atan(1/3); // ~18.43° in radians (aspect ratio 3:1, wide)
     const maxAngle = Math.PI / 2 - minAngle; // ~71.57° in radians (aspect ratio 1:3, tall)
     
-    // Convert arc spacing (mm) to angle precision for ternary search termination
-    // We stop when the search range is smaller than 2 * arcSpacing
-    const anglePrecision = (2 * arcSpacing) / optimalRadius;
+    console.log(`\n=== PHASE 2: EXHAUSTIVE ARC COMPUTATION ===`);
+    console.log(`Number of arcs: ${totalArcs}`);
+    console.log(`Radii: ${radiiToTest.map(r => r.toFixed(0) + 'mm').join(', ')}`);
+    console.log(`Angle range: ${(minAngle * 180 / Math.PI).toFixed(1)}° to ${(maxAngle * 180 / Math.PI).toFixed(1)}°`);
+    console.log(`Step size: ${arcSpacing}mm`);
     
-    // Helper function to evaluate fitness at a given angle
-    async function evaluateFitnessAtAngle(angleRad) {
-        const width = optimalRadius * Math.cos(angleRad);
-        const height = optimalRadius * Math.sin(angleRad);
+    // Calculate total number of points across all arcs
+    let totalPointsToTest = 0;
+    for (const radius of radiiToTest) {
+        const arcLength = radius * (maxAngle - minAngle);
+        const numPointsForArc = Math.max(2, Math.ceil(arcLength / arcSpacing));
+        totalPointsToTest += numPointsForArc;
+    }
+    console.log(`Total points to test: ${totalPointsToTest}`);
+    
+    // Helper function to evaluate fitness at a given angle and radius
+    async function evaluateFitnessAtAngleAndRadius(angleRad, radius) {
+        const width = radius * Math.cos(angleRad);
+        const height = radius * Math.sin(angleRad);
         
         // Skip invalid dimensions
         if (width <= 0 || height <= 0) return { fitness: Infinity, result: null };
@@ -1219,80 +1299,74 @@ async function findBestRectangularStart(measurements) {
             width: width,
             height: height,
             fitness: fitnessValue,
-            rawFitness: result.fitness
+            rawFitness: result.fitness,
+            radius: radius  // Track which radius this point came from
         });
         
         testedCount++;
         
-        return { fitness: result.fitness, result: result, angle: angleRad };
+        return { fitness: result.fitness, result: result, angle: angleRad, radius: radius };
     }
     
-    // Ternary search to find the angle with maximum fitness (minimum rawFitness)
-    let left = minAngle;
-    let right = maxAngle;
-    
-    while (right - left > anglePrecision) {
-        // Divide the range into three parts
-        const leftThird = left + (right - left) / 3;
-        const rightThird = right - (right - left) / 3;
+    // Exhaustive search: compute every point along all arcs
+    for (let arcIdx = 0; arcIdx < radiiToTest.length; arcIdx++) {
+        const radius = radiiToTest[arcIdx];
+        const arcLength = radius * (maxAngle - minAngle);
+        const numPoints = Math.max(2, Math.ceil(arcLength / arcSpacing));
+        const angleStep = (maxAngle - minAngle) / (numPoints - 1);
         
-        // Evaluate fitness at the two interior points
-        const leftResult = await evaluateFitnessAtAngle(leftThird);
-        const rightResult = await evaluateFitnessAtAngle(rightThird);
+        console.log(`\nArc ${arcIdx + 1}/${totalArcs}: radius ${radius.toFixed(0)}mm, ${numPoints} points`);
         
-        // Update best guess if we found a better fitness
-        if (leftResult.fitness < bestFitness) {
-            bestFitness = leftResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(leftResult.result));
-        }
-        if (rightResult.fitness < bestFitness) {
-            bestFitness = rightResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(rightResult.result));
-        }
-        
-        // Update progress
-        const searchRange = ((right - left) / (maxAngle - minAngle) * 100).toFixed(1);
-        if (bestGuess) {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-        } else {
-            searchStatus.textContent = `Phase 2: Ternary search (${testedCount} tested, ${searchRange}% range remaining)...`;
-        }
-        
-        // Render current data
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Narrow the search range based on which point has better fitness
-        // We want to minimize fitness (lower is better), so we eliminate the part with worse fitness
-        if (leftResult.fitness < rightResult.fitness) {
-            // Maximum is in the left 2/3, eliminate the right 1/3
-            right = rightThird;
-        } else {
-            // Maximum is in the right 2/3, eliminate the left 1/3
-            left = leftThird;
+        for (let i = 0; i < numPoints; i++) {
+            const angle = minAngle + (i * angleStep);
+            const angleResult = await evaluateFitnessAtAngleAndRadius(angle, radius);
+            
+            // Update best guess if we found a better fitness
+            if (angleResult.fitness < bestFitness) {
+                bestFitness = angleResult.fitness;
+                bestGuess = JSON.parse(JSON.stringify(angleResult.result));
+            }
+            
+            // Update progress every 10 points or on final point of final arc
+            if (testedCount % 10 === 0 || (arcIdx === totalArcs - 1 && i === numPoints - 1)) {
+                const progress = ((testedCount / totalPointsToTest) * 100).toFixed(1);
+                if (bestGuess) {
+                    searchStatus.textContent = `Phase 2: Exhaustive arc${totalArcs > 1 ? 's' : ''} (${testedCount}/${totalPointsToTest} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+                } else {
+                    searchStatus.textContent = `Phase 2: Exhaustive arc${totalArcs > 1 ? 's' : ''} (${testedCount}/${totalPointsToTest} points, ${progress}% complete)...`;
+                }
+                
+                // Render current data (only every 10 points for performance)
+                render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
         }
     }
     
-    // Evaluate the final center point for completeness
-    const finalAngle = (left + right) / 2;
-    const finalResult = await evaluateFitnessAtAngle(finalAngle);
-    if (finalResult.fitness < bestFitness) {
-        bestFitness = finalResult.fitness;
-        bestGuess = JSON.parse(JSON.stringify(finalResult.result));
-    }
+    console.log(`\n=== PHASE 2 EXHAUSTIVE ARC COMPLETE ===`);
+    console.log(`Total arcs tested: ${totalArcs}`);
+    console.log(`Total points tested: ${testedCount}`);
+    console.log(`Best fitness: ${bestFitness.toFixed(6)} (display: ${(1/bestFitness).toFixed(4)})`);
+    console.log(`Best dimensions: ${bestGuess.tr.x.toFixed(1)}mm x ${bestGuess.tr.y.toFixed(1)}mm`);
     
     // Final render
     searchStatus.textContent = "Rendering final 3D surface map...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
     
     // Setup controls
-    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
+    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess, optimalRadius);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using ternary search (1mm precision). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using efficient ternary search (1mm precision).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    const arcText = totalArcs > 1 ? `${totalArcs} arcs` : 'arc';
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points on ${arcText} using exhaustive computation (${arcSpacing}mm step size). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points on ${arcText} using exhaustive arc computation (${arcSpacing}mm step size).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
+    
+    // Store data globally so manual point computation can access it
+    window.lastTestedPoints = testedPoints;
+    window.lastBestGuess = bestGuess;
+    window.lastOptimalRadius = optimalRadius;
     
     return bestGuess;
 }
@@ -1472,7 +1546,7 @@ function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues,
     };
 }
 
-function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
+function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
@@ -1489,6 +1563,15 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     for (const point of testedPoints) {
         minFitness = Math.min(minFitness, point.fitness);
         maxFitness = Math.max(maxFitness, point.fitness);
+    }
+    
+    // Identify which points are on the optimal arc (if optimalRadius is provided)
+    const tolerance = 0.1; // mm tolerance for matching radius
+    let optimalArcPoints = [];
+    if (optimalRadius !== undefined) {
+        optimalArcPoints = testedPoints.filter(p => 
+            p.radius !== undefined && Math.abs(p.radius - optimalRadius) < tolerance
+        );
     }
     
     // Project 3D points to 2D using isometric projection
@@ -1544,13 +1627,22 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     }
     
     // Draw connecting lines between adjacent points on the arc to show the curve
+    // Skip manual points as they form a grid, not an arc
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
+    let firstNonManualPoint = true;
     for (let i = 0; i < projectedPoints.length; i++) {
         const point = projectedPoints[i];
-        if (i === 0) {
+        
+        // Skip manual points - they shouldn't be connected with lines
+        if (point.originalPoint.isManual) {
+            continue;
+        }
+        
+        if (firstNonManualPoint) {
             ctx.moveTo(point.x, point.y);
+            firstNonManualPoint = false;
         } else {
             ctx.lineTo(point.x, point.y);
         }
@@ -1578,6 +1670,53 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
             ctx.stroke();
         }
     }
+    
+    // Mark the optimal arc with distinctive markers at the ends
+    if (optimalRadius !== undefined && optimalArcPoints.length > 0) {
+        // Find the first and last points on the optimal arc
+        const firstOptimalPoint = optimalArcPoints[0];
+        const lastOptimalPoint = optimalArcPoints[optimalArcPoints.length - 1];
+        
+        // Helper function to draw a star marker
+        function drawStar(centerX, centerY, size, color) {
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                const radius = i % 2 === 0 ? size : size / 2;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        // Draw star at the first point of optimal arc
+        const firstX = firstOptimalPoint.width - 2500;
+        const firstY = firstOptimalPoint.height - 2500;
+        const firstZ = ((firstOptimalPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 80;
+        const firstP = project3D(firstX, firstY, firstZ);
+        drawStar(firstP.x, firstP.y, 12, 'gold');
+        
+        // Draw star at the last point of optimal arc
+        const lastX = lastOptimalPoint.width - 2500;
+        const lastY = lastOptimalPoint.height - 2500;
+        const lastZ = ((lastOptimalPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 80;
+        const lastP = project3D(lastX, lastY, lastZ);
+        drawStar(lastP.x, lastP.y, 12, 'gold');
+    }
+    
     
     // Draw 3D axes
     const axisLength = 500;
@@ -1628,9 +1767,14 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
     ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 35);
     ctx.fillText('Red Dot = Best Configuration', 10, 50);
+    let legendLine = 65;
+    if (optimalRadius !== undefined && optimalArcPoints.length > 0) {
+        ctx.fillText('Gold Stars = Optimal Arc Endpoints', 10, legendLine);
+        legendLine += 15;
+    }
 }
 
-function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
+function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess, optimalRadius) {
     // Mouse drag to rotate
     let isDragging = false;
     let lastX = 0, lastY = 0;
@@ -1652,7 +1796,7 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
             lastX = e.clientX;
             lastY = e.clientY;
             
-            render3DSurfaceArc(canvas, testedPoints, bestGuess);
+            render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
         }
     };
     
@@ -1672,7 +1816,7 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
         } else {
             surfaceMapState.zoom /= 1.1;
         }
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+        render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
     };
 }
 
@@ -1855,12 +1999,12 @@ const CALIBRATION_EVENT_NAME = 'calibration-data';
 
 
 //Creates the canvas on which the pattern will be drawn
-var canvas = document.createElement('canvas');
-canvas.id     = "CursorLayer";
-canvas.width  = 1000;
-canvas.height = 600;
-canvas.style.border   = "1px solid";
-document.getElementById("views").appendChild(canvas);
+const cursorCanvas = document.createElement('canvas');
+cursorCanvas.id     = "CursorLayer";
+cursorCanvas.width  = 1000;
+cursorCanvas.height = 600;
+cursorCanvas.style.border   = "1px solid";
+document.getElementById("views").appendChild(cursorCanvas);
 
 
 
@@ -1879,6 +2023,156 @@ computeButton.addEventListener('click', () => {
     printResults(initialGuess);
 });
 
+// Manual point computation
+const computeManualPointButton = document.getElementById('compute-manual-point-button');
+computeManualPointButton.addEventListener('click', async () => {
+    const widthInput = document.getElementById('manual-width-input');
+    const heightInput = document.getElementById('manual-height-input');
+    const arcStepSizeInput = document.getElementById('arc-step-size-input');
+    const messagesBox = document.getElementById('output');
+    
+    const centerWidth = parseFloat(widthInput.value);
+    const centerHeight = parseFloat(heightInput.value);
+    const stepSize = parseFloat(arcStepSizeInput.value);
+    
+    // Validate inputs
+    if (isNaN(centerWidth) || isNaN(centerHeight) || centerWidth <= 0 || centerHeight <= 0) {
+        messagesBox.value += '\n⚠️ Invalid width or height. Please enter positive numbers.\n';
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        return;
+    }
+    
+    if (isNaN(stepSize) || stepSize <= 0) {
+        messagesBox.value += '\n⚠️ Invalid arc step size. Please enter a positive number.\n';
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        return;
+    }
+    
+    messagesBox.value += `\n=== Computing 10x10 Grid Around Point: Center=${centerWidth}mm x ${centerHeight}mm, Step=${stepSize}mm ===\n`;
+    
+    // Display on 3D view - show search info
+    const searchInfo = document.getElementById('search-info');
+    const canvas = document.getElementById('surface-map-canvas');
+    searchInfo.style.display = 'block';
+    canvas.style.display = 'block';
+    document.getElementById('search-status').textContent = 'Computing 10x10 grid of points...';
+    
+    // Compute 10x10 grid centered on the specified point
+    const gridSize = 10;
+    const gridPoints = [];
+    let centerPoint = null;
+    let totalPoints = gridSize * gridSize;
+    let computedPoints = 0;
+    
+    // Calculate grid boundaries (5 steps in each direction from center)
+    const halfGrid = Math.floor(gridSize / 2);
+    
+    for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+            // Calculate offset from center (-4.5 to +4.5 for 10x10 grid)
+            const widthOffset = (i - halfGrid + 0.5) * stepSize;
+            const heightOffset = (j - halfGrid + 0.5) * stepSize;
+            
+            const width = centerWidth + widthOffset;
+            const height = centerHeight + heightOffset;
+            
+            // Skip invalid dimensions
+            if (width <= 0 || height <= 0) {
+                totalPoints--;
+                continue;
+            }
+            
+            // Create a test guess with these dimensions
+            const measurementsCopy = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
+            const testGuess = {
+                tl: {x: 0, y: height},
+                tr: {x: width, y: height},
+                bl: {x: 0, y: 0},
+                br: {x: width, y: 0},
+                fitness: 0
+            };
+            
+            // Compute fitness
+            const result = computeLinesFitness(measurementsCopy, testGuess, true);
+            const fitnessValue = 1 / result.fitness;
+            
+            const gridPoint = {
+                width: width,
+                height: height,
+                fitness: fitnessValue,
+                rawFitness: result.fitness,
+                radius: Math.sqrt(width * width + height * height),
+                isManual: true,
+                isGridCenter: (i === halfGrid && j === halfGrid) // Mark the center point
+            };
+            
+            gridPoints.push(gridPoint);
+            computedPoints++;
+            
+            // Track the center point separately
+            if (i === halfGrid && j === halfGrid) {
+                centerPoint = gridPoint;
+            }
+            
+            // Update progress every 10 points
+            if (computedPoints % 10 === 0 || computedPoints === totalPoints) {
+                const progress = ((computedPoints / totalPoints) * 100).toFixed(1);
+                document.getElementById('search-status').textContent = `Computing grid: ${computedPoints}/${totalPoints} points (${progress}%)`;
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+        }
+    }
+    
+    messagesBox.value += `Computed ${gridPoints.length} points in 10x10 grid\n`;
+    if (centerPoint) {
+        messagesBox.value += `Center Point Fitness: ${centerPoint.fitness.toFixed(7)} (raw: ${centerPoint.rawFitness.toFixed(7)})\n`;
+        messagesBox.value += `Center Configuration: ${centerWidth.toFixed(1)}mm x ${centerHeight.toFixed(1)}mm\n`;
+    }
+    
+    // Find best point in grid
+    let bestGridPoint = gridPoints[0];
+    for (const point of gridPoints) {
+        if (point.rawFitness < bestGridPoint.rawFitness) {
+            bestGridPoint = point;
+        }
+    }
+    messagesBox.value += `Best Point in Grid: ${bestGridPoint.width.toFixed(1)}mm x ${bestGridPoint.height.toFixed(1)}mm, Fitness: ${bestGridPoint.fitness.toFixed(7)}\n`;
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+    
+    // Check if there are already points from a previous arc computation
+    if (typeof window.lastTestedPoints !== 'undefined' && window.lastTestedPoints.length > 0) {
+        // Add grid points to existing visualization
+        window.lastTestedPoints = window.lastTestedPoints.concat(gridPoints);
+        
+        // Re-render with all points
+        render3DSurfaceArc(canvas, window.lastTestedPoints, window.lastBestGuess, window.lastOptimalRadius);
+        
+        // Re-setup controls with updated points array so rotation works correctly
+        setupSurfaceMapControlsArc(canvas, window.lastTestedPoints, window.lastBestGuess, window.lastOptimalRadius);
+        
+        messagesBox.value += `✓ Grid points added to existing 3D visualization\n`;
+    } else {
+        // Create new visualization with grid points
+        window.lastTestedPoints = gridPoints;
+        window.lastBestGuess = centerPoint ? {
+            tl: {x: 0, y: centerPoint.height},
+            tr: {x: centerPoint.width, y: centerPoint.height},
+            bl: {x: 0, y: 0},
+            br: {x: centerPoint.width, y: 0},
+            fitness: centerPoint.rawFitness
+        } : null;
+        window.lastOptimalRadius = undefined;
+        
+        document.getElementById('search-status').textContent = `✓ 10x10 grid computed (${gridPoints.length} points)`;
+        
+        render3DSurfaceArc(canvas, gridPoints, window.lastBestGuess, undefined);
+        setupSurfaceMapControlsArc(canvas, gridPoints, window.lastBestGuess, undefined);
+        
+        messagesBox.value += `✓ New 3D visualization created with grid points\n`;
+    }
+    
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+});
 
 // var initialGuess = {
 //     tl: {x: 5.08, y: 2790.71},
@@ -1937,6 +2231,15 @@ computeConvergeButton.addEventListener('click', async () => {
         messagesBox.value = initialMessage + decisionMessage;
         messagesBox.scrollTop = messagesBox.scrollHeight;
         startingGuess = initialGuess;
+    }
+    
+    // Check if user wants to skip further optimization
+    const skipOptimization = document.getElementById('skip-optimization').checked;
+    if (skipOptimization) {
+        messagesBox.value += "✓ Skipping further optimization as requested (checkbox enabled).\n";
+        messagesBox.value += "Arc computation complete. 3D visualization is ready for exploration.\n";
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        return; // Exit early, don't run findMaxFitness
     }
     
     messagesBox.value += "Using best start for convergence iterations\n";
