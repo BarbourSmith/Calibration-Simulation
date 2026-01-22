@@ -1609,13 +1609,8 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     // Sort by Z depth (painter's algorithm)
     projectedPoints.sort((a, b) => a.z - b.z);
     
-    // Draw points as circles (skip manual points as they get special markers)
+    // Draw points as circles
     for (const point of projectedPoints) {
-        // Skip manual points - they get purple diamond markers instead
-        if (point.originalPoint.isManual) {
-            continue;
-        }
-        
         // Color gradient from blue (low) to red (high)
         const hue = (1 - point.normalized) * 240; // 240 = blue, 0 = red
         const saturation = 80;
@@ -1722,31 +1717,6 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
         drawStar(lastP.x, lastP.y, 12, 'gold');
     }
     
-    // Mark any manually computed points with a purple diamond
-    const manualPoints = testedPoints.filter(p => p.isManual);
-    for (const manualPoint of manualPoints) {
-        const x = manualPoint.width - 2500;
-        const y = manualPoint.height - 2500;
-        const z = ((manualPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 100;
-        const p = project3D(x, y, z);
-        
-        // Draw a diamond marker
-        ctx.save();
-        ctx.fillStyle = 'purple';
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        
-        const size = 12;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y - size);      // top
-        ctx.lineTo(p.x + size, p.y);      // right
-        ctx.lineTo(p.x, p.y + size);      // bottom
-        ctx.lineTo(p.x - size, p.y);      // left
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-    }
     
     // Draw 3D axes
     const axisLength = 500;
@@ -1801,10 +1771,6 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     if (optimalRadius !== undefined && optimalArcPoints.length > 0) {
         ctx.fillText('Gold Stars = Optimal Arc Endpoints', 10, legendLine);
         legendLine += 15;
-    }
-    const hasManualPoints = testedPoints.some(p => p.isManual);
-    if (hasManualPoints) {
-        ctx.fillText('Purple Diamond = Manual Point', 10, legendLine);
     }
 }
 
