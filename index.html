@@ -1210,8 +1210,9 @@ async function findBestRectangularStart(measurements) {
         radiiToTest.push(optimalRadius);
     } else {
         // Calculate offset for additional arcs
-        // numArcs of 2 means 1 arc on each side (3 total: -1, 0, +1)
-        // numArcs of 3 means 2 arcs on each side (5 total: -2, -1, 0, +1, +2)
+        // numArcs specifies how many arcs to add on EACH side of the optimal radius
+        // numArcs = 2: adds 1 arc per side → 3 total arcs (optimal - stepSize, optimal, optimal + stepSize)
+        // numArcs = 3: adds 2 arcs per side → 5 total arcs (optimal - 2*stepSize, ..., optimal + 2*stepSize)
         const arcsOnEachSide = numArcs - 1;
         for (let i = -arcsOnEachSide; i <= arcsOnEachSide; i++) {
             radiiToTest.push(optimalRadius + (i * arcSpacing));
