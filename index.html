@@ -953,8 +953,11 @@ function generateConstraintCurve(dTL, dTR, dBR, step = 50) {
     const TR2 = dTR * dTR;
     const BR2 = dBR * dBR;
     
-    const Kx = TL2 - TR2; // Used for x term
-    const Ky = TR2 - BR2; // Used for y term (diff between TR and BR)
+    // Geometric constants derived from distance measurements
+    // Kx represents the difference in squared distances to top corners (affects x-coordinate of point)
+    const Kx = TL2 - TR2;
+    // Ky represents the difference in squared distances between top-right and bottom-right (affects y-coordinate of point)
+    const Ky = TR2 - BR2;
     
     // Bounds for w: The point (x,y) must be real
     // Max dimension won't exceed sum of distances
@@ -979,7 +982,9 @@ function generateConstraintCurve(dTL, dTR, dBR, step = 50) {
             let Vs = [V_mag, -V_mag];
             
             Vs.forEach(V => {
-                // Solve quadratic: h^2 + (2V)h + Ky = 0
+                // Solve quadratic equation for h: h^2 + (2V)h + Ky = 0
+                // Using quadratic formula: h = [-(2V) ± sqrt((2V)^2 - 4(1)(Ky))] / (2*1)
+                // Discriminant: (2V)^2 - 4(1)(Ky) = 4V^2 - 4Ky
                 let discrim = 4 * V * V - 4 * Ky;
                 
                 if (discrim >= 0) {
@@ -1115,21 +1120,27 @@ async function findBestRectangularStart(measurements) {
     const maxW = bestCoarsePoint.point.w + searchRadius;
     
     // Generate fine curve points in the refined region
+    // Note: We inline the curve generation here (instead of calling generateConstraintCurve)
+    // because we need to filter by height proximity to the best coarse result
     const fineCurvePoints = [];
     const fineStep = 1; // 1mm precision
     
+    const Kx = dTL*dTL - dTR*dTR;  // Same as in generateConstraintCurve
+    const Ky = dTR*dTR - dBR*dBR;  // Same as in generateConstraintCurve
+    const TL2 = dTL * dTL;
+    
     for (let w = minW; w <= maxW; w += fineStep) {
-        // Calculate for this specific width using same curve math
-        let valX = (w * w + (dTL*dTL - dTR*dTR)) / (2 * w);
+        // Calculate for this specific width using same curve math as generateConstraintCurve
+        let valX = (w * w + Kx) / (2 * w);
         let valX2 = valX * valX;
-        let remainder = dTL*dTL - valX2;
+        let remainder = TL2 - valX2;
         
         if (remainder >= 0) {
             let V_mag = Math.sqrt(remainder);
             let Vs = [V_mag, -V_mag];
             
             Vs.forEach(V => {
-                let discrim = 4 * V * V - 4 * (dTR*dTR - dBR*dBR);
+                let discrim = 4 * V * V - 4 * Ky;
                 
                 if (discrim >= 0) {
                     let sqrtDisc = Math.sqrt(discrim);
@@ -1139,10 +1150,10 @@ async function findBestRectangularStart(measurements) {
                     [h1, h2].forEach(h => {
                         if (h > 0.01) {
                             let x = valX;
-                            let y = (h * h - (dTR*dTR - dBR*dBR)) / (2 * h);
+                            let y = (h * h - Ky) / (2 * h);
                             let inside = (x >= -0.01 && x <= w + 0.01 && y >= -0.01 && y <= h + 0.01);
                             
-                            // Only include points near the best coarse height
+                            // Only include points near the best coarse height (refinement-specific filter)
                             if (inside && Math.abs(h - bestCoarsePoint.point.h) < searchRadius) {
                                 fineCurvePoints.push({ w: w, h: h, x: x, y: y });
                             }
