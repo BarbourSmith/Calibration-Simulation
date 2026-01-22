@@ -1317,7 +1317,7 @@ async function findBestRectangularStart(measurements) {
                 }
                 
                 // Render current data (only every 10 points for performance)
-                render3DSurfaceArc(canvas, testedPoints, bestGuess);
+                render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
                 await new Promise(resolve => setTimeout(resolve, 1));
             }
         }
@@ -1333,10 +1333,10 @@ async function findBestRectangularStart(measurements) {
     searchStatus.textContent = "Rendering final 3D surface map...";
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    render3DSurfaceArc(canvas, testedPoints, bestGuess);
+    render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
     
     // Setup controls
-    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
+    setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess, optimalRadius);
     
     const arcText = totalArcs > 1 ? `${totalArcs} arcs` : 'arc';
     searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points on ${arcText} using exhaustive computation (${arcSpacing}mm step size). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
@@ -1521,7 +1521,7 @@ function setupSurfaceMapControls(canvas, fitnessData, widthValues, heightValues,
     };
 }
 
-function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
+function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
@@ -1538,6 +1538,15 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     for (const point of testedPoints) {
         minFitness = Math.min(minFitness, point.fitness);
         maxFitness = Math.max(maxFitness, point.fitness);
+    }
+    
+    // Identify which points are on the optimal arc (if optimalRadius is provided)
+    const tolerance = 0.1; // mm tolerance for matching radius
+    let optimalArcPoints = [];
+    if (optimalRadius !== undefined) {
+        optimalArcPoints = testedPoints.filter(p => 
+            p.radius !== undefined && Math.abs(p.radius - optimalRadius) < tolerance
+        );
     }
     
     // Project 3D points to 2D using isometric projection
@@ -1628,6 +1637,52 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
         }
     }
     
+    // Mark the optimal arc with distinctive markers at the ends
+    if (optimalRadius !== undefined && optimalArcPoints.length > 0) {
+        // Find the first and last points on the optimal arc
+        const firstOptimalPoint = optimalArcPoints[0];
+        const lastOptimalPoint = optimalArcPoints[optimalArcPoints.length - 1];
+        
+        // Helper function to draw a star marker
+        function drawStar(centerX, centerY, size, color) {
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                const radius = i % 2 === 0 ? size : size / 2;
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        // Draw star at the first point of optimal arc
+        const firstX = firstOptimalPoint.width - 2500;
+        const firstY = firstOptimalPoint.height - 2500;
+        const firstZ = ((firstOptimalPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 80;
+        const firstP = project3D(firstX, firstY, firstZ);
+        drawStar(firstP.x, firstP.y, 12, 'gold');
+        
+        // Draw star at the last point of optimal arc
+        const lastX = lastOptimalPoint.width - 2500;
+        const lastY = lastOptimalPoint.height - 2500;
+        const lastZ = ((lastOptimalPoint.fitness - minFitness) / (maxFitness - minFitness)) * 1000 + 80;
+        const lastP = project3D(lastX, lastY, lastZ);
+        drawStar(lastP.x, lastP.y, 12, 'gold');
+    }
+    
     // Draw 3D axes
     const axisLength = 500;
     const axisOrigin = { x: -2500, y: -2500, z: 0 };
@@ -1677,9 +1732,12 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess) {
     ctx.fillText(`Fitness Range: ${minFitness.toFixed(4)} - ${maxFitness.toFixed(4)}`, 10, 20);
     ctx.fillText('Blue = Low Fitness, Red = High Fitness', 10, 35);
     ctx.fillText('Red Dot = Best Configuration', 10, 50);
+    if (optimalRadius !== undefined && optimalArcPoints.length > 0) {
+        ctx.fillText('Gold Stars = Optimal Arc Endpoints', 10, 65);
+    }
 }
 
-function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
+function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess, optimalRadius) {
     // Mouse drag to rotate
     let isDragging = false;
     let lastX = 0, lastY = 0;
@@ -1701,7 +1759,7 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
             lastX = e.clientX;
             lastY = e.clientY;
             
-            render3DSurfaceArc(canvas, testedPoints, bestGuess);
+            render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
         }
     };
     
@@ -1721,7 +1779,7 @@ function setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess) {
         } else {
             surfaceMapState.zoom /= 1.1;
         }
-        render3DSurfaceArc(canvas, testedPoints, bestGuess);
+        render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius);
     };
 }
 
