@@ -1632,13 +1632,22 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     }
     
     // Draw connecting lines between adjacent points on the arc to show the curve
+    // Skip manual points as they form a grid, not an arc
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.lineWidth = 1;
     ctx.beginPath();
+    let firstNonManualPoint = true;
     for (let i = 0; i < projectedPoints.length; i++) {
         const point = projectedPoints[i];
-        if (i === 0) {
+        
+        // Skip manual points - they shouldn't be connected with lines
+        if (point.originalPoint.isManual) {
+            continue;
+        }
+        
+        if (firstNonManualPoint) {
             ctx.moveTo(point.x, point.y);
+            firstNonManualPoint = false;
         } else {
             ctx.lineTo(point.x, point.y);
         }
