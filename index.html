@@ -1199,8 +1199,8 @@ async function findBestRectangularStart(measurements) {
     
     // Calculate arc length and number of points to test
     const arcLength = optimalRadius * (maxAngle - minAngle);
-    const numPoints = Math.ceil(arcLength / arcSpacing);
-    const angleStep = (maxAngle - minAngle) / numPoints;
+    const numPoints = Math.max(2, Math.ceil(arcLength / arcSpacing)); // Ensure at least 2 points
+    const angleStep = (maxAngle - minAngle) / (numPoints - 1); // Divide by n-1 to include both endpoints
     
     console.log(`\n=== PHASE 2: EXHAUSTIVE ARC COMPUTATION ===`);
     console.log(`Arc radius: ${optimalRadius.toFixed(0)}mm`);
@@ -1255,7 +1255,7 @@ async function findBestRectangularStart(measurements) {
         
         // Update progress every 10 points or on final point
         if (i % 10 === 0 || i === numPoints - 1) {
-            const progress = ((i / (numPoints - 1)) * 100).toFixed(1);
+            const progress = numPoints > 1 ? ((i / (numPoints - 1)) * 100).toFixed(1) : '100.0';
             if (bestGuess) {
                 searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
             } else {
