@@ -254,6 +254,10 @@
                     <label for="arc-step-size-input">Arc Step Size (mm)</label>
                     <input type="number" id="arc-step-size-input" value="1" step="0.1" min="0.1" max="100">
                 </div>
+                <div class="input-field">
+                    <label for="num-arcs-input">Number of Arcs</label>
+                    <input type="number" id="num-arcs-input" value="1" step="1" min="1" max="10">
+                </div>
             </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
@@ -958,6 +962,17 @@ async function findBestRectangularStart(measurements) {
         arcStepSizeInput.value = 1; // Reset input to valid value
     }
     
+    // Get number of arcs from user input with validation
+    const numArcsInput = document.getElementById('num-arcs-input');
+    let numArcs = parseInt(numArcsInput.value);
+    
+    // Validate and clamp number of arcs to acceptable range
+    if (isNaN(numArcs) || numArcs < 1 || numArcs > 10) {
+        console.warn(`Invalid number of arcs: ${numArcsInput.value}. Using default value of 1.`);
+        numArcs = 1;
+        numArcsInput.value = 1; // Reset input to valid value
+    }
+    
     // Show 3D visualization elements
     searchInfo.style.display = 'block';
     canvas.style.display = 'block';
@@ -1188,10 +1203,29 @@ async function findBestRectangularStart(measurements) {
     const optimalRadius = Math.sqrt(2) * refinedBestSize;
     
     messagesBox.value += `Phase 1 complete: Optimal radius = ${optimalRadius.toFixed(0)}mm (at ${refinedBestSize}x${refinedBestSize}mm)\n`;
-    messagesBox.value += `Phase 2: Computing all points on arc at ${optimalRadius.toFixed(0)}mm radius with ${arcSpacing}mm step size...\n`;
-    searchStatus.textContent = `Phase 2: Exhaustive arc computation (radius ${optimalRadius.toFixed(0)}mm, ${arcSpacing}mm steps)...`;
     
-    // PHASE 2: Compute every point along the arc with configurable step size
+    // Calculate which radii to test based on number of arcs
+    const radiiToTest = [];
+    if (numArcs === 1) {
+        radiiToTest.push(optimalRadius);
+    } else {
+        // Calculate offset for additional arcs
+        // numArcs of 2 means 1 arc on each side (3 total: -1, 0, +1)
+        // numArcs of 3 means 2 arcs on each side (5 total: -2, -1, 0, +1, +2)
+        const arcsOnEachSide = numArcs - 1;
+        for (let i = -arcsOnEachSide; i <= arcsOnEachSide; i++) {
+            radiiToTest.push(optimalRadius + (i * arcSpacing));
+        }
+    }
+    
+    const totalArcs = radiiToTest.length;
+    messagesBox.value += `Phase 2: Computing all points on ${totalArcs} arc${totalArcs > 1 ? 's' : ''} with ${arcSpacing}mm step size...\n`;
+    if (totalArcs > 1) {
+        messagesBox.value += `  Radii: ${radiiToTest.map(r => r.toFixed(0) + 'mm').join(', ')}\n`;
+    }
+    searchStatus.textContent = `Phase 2: Exhaustive arc computation (${totalArcs} arc${totalArcs > 1 ? 's' : ''}, ${arcSpacing}mm steps)...`;
+    
+    // PHASE 2: Compute every point along the arc(s) with configurable step size
     let bestGuess = null;
     let bestFitness = Infinity;
     let testedCount = 0;
@@ -1204,22 +1238,25 @@ async function findBestRectangularStart(measurements) {
     const minAngle = Math.atan(1/3); // ~18.43° in radians (aspect ratio 3:1, wide)
     const maxAngle = Math.PI / 2 - minAngle; // ~71.57° in radians (aspect ratio 1:3, tall)
     
-    // Calculate arc length and number of points to test
-    const arcLength = optimalRadius * (maxAngle - minAngle);
-    const numPoints = Math.max(2, Math.ceil(arcLength / arcSpacing)); // Ensure at least 2 points
-    const angleStep = (maxAngle - minAngle) / (numPoints - 1); // Divide by n-1 to include both endpoints
-    
     console.log(`\n=== PHASE 2: EXHAUSTIVE ARC COMPUTATION ===`);
-    console.log(`Arc radius: ${optimalRadius.toFixed(0)}mm`);
+    console.log(`Number of arcs: ${totalArcs}`);
+    console.log(`Radii: ${radiiToTest.map(r => r.toFixed(0) + 'mm').join(', ')}`);
     console.log(`Angle range: ${(minAngle * 180 / Math.PI).toFixed(1)}° to ${(maxAngle * 180 / Math.PI).toFixed(1)}°`);
-    console.log(`Arc length: ${arcLength.toFixed(0)}mm`);
     console.log(`Step size: ${arcSpacing}mm`);
-    console.log(`Number of points: ${numPoints}`);
     
-    // Helper function to evaluate fitness at a given angle
-    async function evaluateFitnessAtAngle(angleRad) {
-        const width = optimalRadius * Math.cos(angleRad);
-        const height = optimalRadius * Math.sin(angleRad);
+    // Calculate total number of points across all arcs
+    let totalPointsToTest = 0;
+    for (const radius of radiiToTest) {
+        const arcLength = radius * (maxAngle - minAngle);
+        const numPointsForArc = Math.max(2, Math.ceil(arcLength / arcSpacing));
+        totalPointsToTest += numPointsForArc;
+    }
+    console.log(`Total points to test: ${totalPointsToTest}`);
+    
+    // Helper function to evaluate fitness at a given angle and radius
+    async function evaluateFitnessAtAngleAndRadius(angleRad, radius) {
+        const width = radius * Math.cos(angleRad);
+        const height = radius * Math.sin(angleRad);
         
         // Skip invalid dimensions
         if (width <= 0 || height <= 0) return { fitness: Infinity, result: null };
@@ -1241,41 +1278,51 @@ async function findBestRectangularStart(measurements) {
             width: width,
             height: height,
             fitness: fitnessValue,
-            rawFitness: result.fitness
+            rawFitness: result.fitness,
+            radius: radius  // Track which radius this point came from
         });
         
         testedCount++;
         
-        return { fitness: result.fitness, result: result, angle: angleRad };
+        return { fitness: result.fitness, result: result, angle: angleRad, radius: radius };
     }
     
-    // Exhaustive search: compute every point along the arc
-    for (let i = 0; i < numPoints; i++) {
-        const angle = minAngle + (i * angleStep);
-        const angleResult = await evaluateFitnessAtAngle(angle);
+    // Exhaustive search: compute every point along all arcs
+    for (let arcIdx = 0; arcIdx < radiiToTest.length; arcIdx++) {
+        const radius = radiiToTest[arcIdx];
+        const arcLength = radius * (maxAngle - minAngle);
+        const numPoints = Math.max(2, Math.ceil(arcLength / arcSpacing));
+        const angleStep = (maxAngle - minAngle) / (numPoints - 1);
         
-        // Update best guess if we found a better fitness
-        if (angleResult.fitness < bestFitness) {
-            bestFitness = angleResult.fitness;
-            bestGuess = JSON.parse(JSON.stringify(angleResult.result));
-        }
+        console.log(`\nArc ${arcIdx + 1}/${totalArcs}: radius ${radius.toFixed(0)}mm, ${numPoints} points`);
         
-        // Update progress every 10 points or on final point
-        if (i % 10 === 0 || i === numPoints - 1) {
-            const progress = numPoints > 1 ? ((i / (numPoints - 1)) * 100).toFixed(1) : '100.0';
-            if (bestGuess) {
-                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-            } else {
-                searchStatus.textContent = `Phase 2: Exhaustive arc (${testedCount}/${numPoints} points, ${progress}% complete)...`;
+        for (let i = 0; i < numPoints; i++) {
+            const angle = minAngle + (i * angleStep);
+            const angleResult = await evaluateFitnessAtAngleAndRadius(angle, radius);
+            
+            // Update best guess if we found a better fitness
+            if (angleResult.fitness < bestFitness) {
+                bestFitness = angleResult.fitness;
+                bestGuess = JSON.parse(JSON.stringify(angleResult.result));
             }
             
-            // Render current data (only every 10 points for performance)
-            render3DSurfaceArc(canvas, testedPoints, bestGuess);
-            await new Promise(resolve => setTimeout(resolve, 1));
+            // Update progress every 10 points or on final point of final arc
+            if (testedCount % 10 === 0 || (arcIdx === totalArcs - 1 && i === numPoints - 1)) {
+                const progress = ((testedCount / totalPointsToTest) * 100).toFixed(1);
+                if (bestGuess) {
+                    searchStatus.textContent = `Phase 2: Exhaustive arc${totalArcs > 1 ? 's' : ''} (${testedCount}/${totalPointsToTest} points, ${progress}% complete) - Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+                } else {
+                    searchStatus.textContent = `Phase 2: Exhaustive arc${totalArcs > 1 ? 's' : ''} (${testedCount}/${totalPointsToTest} points, ${progress}% complete)...`;
+                }
+                
+                // Render current data (only every 10 points for performance)
+                render3DSurfaceArc(canvas, testedPoints, bestGuess);
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
         }
-    }
     
     console.log(`\n=== PHASE 2 EXHAUSTIVE ARC COMPLETE ===`);
+    console.log(`Total arcs tested: ${totalArcs}`);
     console.log(`Total points tested: ${testedCount}`);
     console.log(`Best fitness: ${bestFitness.toFixed(6)} (display: ${(1/bestFitness).toFixed(4)})`);
     console.log(`Best dimensions: ${bestGuess.tr.x.toFixed(1)}mm x ${bestGuess.tr.y.toFixed(1)}mm`);
@@ -1289,8 +1336,9 @@ async function findBestRectangularStart(measurements) {
     // Setup controls
     setupSurfaceMapControlsArc(canvas, testedPoints, bestGuess);
     
-    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points using exhaustive arc search (${arcSpacing}mm step size). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
-    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points using exhaustive arc computation (${arcSpacing}mm step size).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
+    const arcText = totalArcs > 1 ? `${totalArcs} arcs` : 'arc';
+    searchStatus.textContent = `✓ Search complete! Tested ${testedCount} points on ${arcText} using exhaustive computation (${arcSpacing}mm step size). Best: ${bestGuess.tr.x.toFixed(1)}x${bestGuess.tr.y.toFixed(1)}mm, fitness: ${(1/bestFitness).toFixed(4)}`;
+    messagesBox.value += `\n✓ Search complete! Tested ${testedCount} points on ${arcText} using exhaustive arc computation (${arcSpacing}mm step size).\n\nBest rectangular start:\n  Width: ${bestGuess.tr.x.toFixed(1)}mm\n  Height: ${bestGuess.tr.y.toFixed(1)}mm\n  Fitness: ${(1/bestGuess.fitness).toFixed(4)}\n\nStarting optimization...\n`;
     messagesBox.scrollTop = messagesBox.scrollHeight;
     
     return bestGuess;
