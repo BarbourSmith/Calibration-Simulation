@@ -1609,8 +1609,13 @@ function render3DSurfaceArc(canvas, testedPoints, bestGuess, optimalRadius) {
     // Sort by Z depth (painter's algorithm)
     projectedPoints.sort((a, b) => a.z - b.z);
     
-    // Draw points as circles
+    // Draw points as circles (skip manual points as they get special markers)
     for (const point of projectedPoints) {
+        // Skip manual points - they get purple diamond markers instead
+        if (point.originalPoint.isManual) {
+            continue;
+        }
+        
         // Color gradient from blue (low) to red (high)
         const hue = (1 - point.normalized) * 240; // 240 = blue, 0 = red
         const saturation = 80;
