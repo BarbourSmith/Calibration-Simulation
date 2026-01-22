@@ -2167,6 +2167,9 @@ computeManualPointButton.addEventListener('click', async () => {
         // Re-render with all points
         render3DSurfaceArc(canvas, window.lastTestedPoints, window.lastBestGuess, window.lastOptimalRadius);
         
+        // Re-setup controls with updated points array so rotation works correctly
+        setupSurfaceMapControlsArc(canvas, window.lastTestedPoints, window.lastBestGuess, window.lastOptimalRadius);
+        
         messagesBox.value += `✓ Grid points added to existing 3D visualization\n`;
     } else {
         // Create new visualization with grid points
@@ -2250,9 +2253,6 @@ computeConvergeButton.addEventListener('click', async () => {
         startingGuess = initialGuess;
     }
     
-    messagesBox.value += "Using best start for convergence iterations\n";
-    messagesBox.scrollTop = messagesBox.scrollHeight;
-    
     // Check if user wants to skip further optimization
     const skipOptimization = document.getElementById('skip-optimization').checked;
     if (skipOptimization) {
@@ -2261,6 +2261,9 @@ computeConvergeButton.addEventListener('click', async () => {
         messagesBox.scrollTop = messagesBox.scrollHeight;
         return; // Exit early, don't run findMaxFitness
     }
+    
+    messagesBox.value += "Using best start for convergence iterations\n";
+    messagesBox.scrollTop = messagesBox.scrollHeight;
 
     function computeGuess() {
         // Clear the canvas
