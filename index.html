@@ -1903,12 +1903,12 @@ const CALIBRATION_EVENT_NAME = 'calibration-data';
 
 
 //Creates the canvas on which the pattern will be drawn
-var canvas = document.createElement('canvas');
-canvas.id     = "CursorLayer";
-canvas.width  = 1000;
-canvas.height = 600;
-canvas.style.border   = "1px solid";
-document.getElementById("views").appendChild(canvas);
+const cursorCanvas = document.createElement('canvas');
+cursorCanvas.id     = "CursorLayer";
+cursorCanvas.width  = 1000;
+cursorCanvas.height = 600;
+cursorCanvas.style.border   = "1px solid";
+document.getElementById("views").appendChild(cursorCanvas);
 
 
 
