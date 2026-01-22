@@ -249,6 +249,22 @@
                     Use rectangular approximation for poor initial guesses (fitness < 0.1)
                 </label>
             </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; font-weight: 500; margin-bottom: 5px;">
+                    Measurement point for rectangular frame estimation:
+                </label>
+                <select id="measurement-selection" style="padding: 8px; border: 2px solid #e2e8f0; border-radius: 6px; font-size: 14px; cursor: pointer; width: 100%; max-width: 300px;">
+                    <option value="0">Measurement 1</option>
+                    <option value="1">Measurement 2</option>
+                    <option value="2">Measurement 3</option>
+                    <option value="3">Measurement 4</option>
+                    <option value="4">Measurement 5</option>
+                    <option value="5">Measurement 6</option>
+                </select>
+                <p style="font-size: 12px; color: #666; margin-top: 5px; margin-bottom: 0;">
+                    Select which measurement point to use for calculating the constraint curve
+                </p>
+            </div>
             <div class="button-group">
                 <button id="compute-button">Refine Measurements 1x</button>
                 <button id="compute-converge-button">Converge</button>
@@ -1030,14 +1046,17 @@ async function findBestRectangularStart(measurements) {
     // Deep copy measurements to avoid mutation during search
     const measurementsCopy = JSON.parse(JSON.stringify(measurements));
     
-    // Use the first measurement to calculate the constraint curve
-    // Each measurement has distances {bl, br, tr, tl} from a measured point to the four corners
-    const firstMeasurement = measurementsCopy[0];
-    const dTL = firstMeasurement.tl;
-    const dTR = firstMeasurement.tr;
-    const dBR = firstMeasurement.br;
+    // Get the selected measurement index from the UI dropdown
+    const selectedMeasurementIndex = parseInt(document.getElementById('measurement-selection').value);
     
-    messagesBox.value += `\nUsing first measurement point:\n`;
+    // Use the selected measurement to calculate the constraint curve
+    // Each measurement has distances {bl, br, tr, tl} from a measured point to the four corners
+    const selectedMeasurement = measurementsCopy[selectedMeasurementIndex];
+    const dTL = selectedMeasurement.tl;
+    const dTR = selectedMeasurement.tr;
+    const dBR = selectedMeasurement.br;
+    
+    messagesBox.value += `\nUsing measurement point ${selectedMeasurementIndex + 1}:\n`;
     messagesBox.value += `  Distance to TL: ${dTL.toFixed(2)}mm\n`;
     messagesBox.value += `  Distance to TR: ${dTR.toFixed(2)}mm\n`;
     messagesBox.value += `  Distance to BR: ${dBR.toFixed(2)}mm\n\n`;
@@ -1941,6 +1960,23 @@ window.onload = function() {
     // Initialize input fields with current values
     syncInputFields();
     
+    // Function to update the measurement selection dropdown
+    function updateMeasurementDropdown() {
+        const dropdown = document.getElementById('measurement-selection');
+        dropdown.innerHTML = ''; // Clear existing options
+        
+        const numMeasurements = rawMeasurements.length;
+        for (let i = 0; i < numMeasurements; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = `Measurement ${i + 1}`;
+            dropdown.appendChild(option);
+        }
+    }
+    
+    // Initialize measurement dropdown with current measurements
+    updateMeasurementDropdown();
+    
     // Add event handler for the parse button
     document.getElementById('parse-data-button').addEventListener('click', function() {
         const input = document.getElementById('calibration-input');
@@ -1960,6 +1996,9 @@ window.onload = function() {
             
             // Update the global measurements variable with projection
             measurements = projectMeasurements(JSON.parse(JSON.stringify(rawMeasurements)));
+            
+            // Update the measurement dropdown with new measurement count
+            updateMeasurementDropdown();
             
             statusSpan.textContent = `✓ Parsed ${parsedMeasurements.length} measurements successfully!`;
             statusSpan.style.color = 'green';
